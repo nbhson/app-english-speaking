@@ -55,7 +55,8 @@
 | 🖱️ **Hover-to-translate** | Di chuột vào bất kỳ từ tiếng Anh nào → popup nghĩa tiếng Việt + IPA + ví dụ, có nút nghe phát âm |
 | 🔍 **Select-phrase translate** | Bôi đen một cụm từ bất kỳ → dịch nghĩa tiếng Việt ngay tại chỗ |
 | 🌐 **Dịch cả message** | Nút trên mỗi message để dịch toàn bộ sang tiếng Việt |
-| 🎨 **Dark / Light mode** | Giao diện tối/sáng, nhớ lựa chọn của bạn |
+| 📜 **Auto-scroll chat** | Main content tự động cuộn xuống tin nhắn mới nhất khi có nội dung mới — kể cả khi AI đang stream từng chữ |
+| 🎨 **Dark / Light mode** | Giao diện tối/sáng, nhớ lựa chọn của bạn. Dark theme dùng tông **đen/xám trung tính**, accent xanh dương chuẩn |
 | ⏱️ **Session stats** | Thời lượng phiên, điểm từ vựng, mức độ tự tin |
 
 ---
@@ -246,7 +247,7 @@ ai-english-speaking-coach/
 ├── App.tsx                      # UI + orchestration phiên (turn-based voice)
 ├── constants.ts                 # System prompt của coach (correction + assessment format)
 ├── types.ts                     # TypeScript types + Web Speech API declarations
-├── index.html                   # HTML entry (Tailwind CDN, importmap React)
+├── index.html                   # HTML entry (Tailwind CDN + tailwind.config darkMode class, CSS variables màu dark trong khối `.dark`, importmap React)
 ├── index.tsx                    # React root
 ├── package.json
 ├── tsconfig.json
@@ -265,7 +266,7 @@ ai-english-speaking-coach/
 | `utils/api.ts` | `loadConfig`/`saveConfig` (localStorage), `chatStream` (SSE), `chatOnce`, `transcribe`, `speech`, `translateWord`, `translatePhrase` |
 | `components/SettingsModal.tsx` | Modal cấu hình Base URL / API key / Model / STT / TTS, nút Reset defaults |
 | `constants.ts` | `SYSTEM_INSTRUCTION` + `MODE_INFO` (mô tả 5 chế độ) |
-| `App.tsx` | State & refs phiên, STT/TTS, xử lý `[Correction]`/`[Assessment]`, HoverableWord, SelectionTranslator |
+| `App.tsx` | State & refs phiên, STT/TTS, xử lý `[Correction]`/`[Assessment]`, auto-scroll chat (`scrollRef`), HoverableWord, SelectionTranslator |
 
 ---
 

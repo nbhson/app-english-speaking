@@ -506,6 +506,7 @@ const App: React.FC = () => {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const recognitionStartedRef = useRef(false);
   const autoListenRef = useRef(autoListen);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     configRef.current = config;
@@ -514,6 +515,12 @@ const App: React.FC = () => {
 
   useEffect(() => {
     transcriptionsRef.current = transcriptions;
+  }, [transcriptions]);
+
+  // Auto-scroll the chat area to the latest message whenever content is added.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [transcriptions]);
 
   useEffect(() => {
@@ -1094,7 +1101,7 @@ const App: React.FC = () => {
 
         {/* Chat / Interaction Area */}
         <section className="flex-1 flex flex-col bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
-          <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 space-y-6 scroll-smooth">
+          <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 space-y-6 scroll-smooth">
             {!session.isActive && !isConnecting && (
               <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto">
                 <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-6">
