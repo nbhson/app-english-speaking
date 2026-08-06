@@ -22,8 +22,8 @@ export const DEFAULT_CONFIG: AIConfig = {
   sttEngine: 'browser',
   sttModel: 'deepgram/nova-3',
   ttsEngine: 'browser',
-  ttsModel: 'openai/tts-1',
-  ttsVoice: 'alloy',
+  ttsModel: 'vertex/gemini-2.5-flash-preview-tts',
+  ttsVoice: 'Zephyr',
 };
 
 const STORAGE_KEY = 'fluentdev-ai-config';

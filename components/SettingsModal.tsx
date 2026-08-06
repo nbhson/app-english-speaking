@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { AIConfig, DEFAULT_CONFIG, saveConfig } from '../utils/api';
-import { X, Save, RotateCcw, Plug, Mic, Volume2, MessageSquare } from 'lucide-react';
+import { AIConfig, DEFAULT_CONFIG, saveConfig, speech } from '../utils/api';
+import { X, Save, RotateCcw, Plug, Mic, Volume2, MessageSquare, Play, Loader2 } from 'lucide-react';
 
 // A few sensible model suggestions for the datalist (gateway catalog).
 const MODEL_SUGGESTIONS = [
@@ -16,6 +16,38 @@ const MODEL_SUGGESTIONS = [
   'oc/deepseek-v4-flash-free',
   'vertex/gemini-3-flash-preview',
   'gemini/gemini-3.5-flash',
+];
+
+// Vertex Gemini TTS models exposed by the gateway (see OmniRoute audioRegistry).
+const TTS_MODEL_SUGGESTIONS = [
+  'vertex/gemini-3.1-flash-tts-preview',
+  'vertex/gemini-2.5-flash-preview-tts',
+  'vertex/gemini-2.5-pro-preview-tts',
+];
+
+// Gemini prebuilt voices (https://ai.google.dev/gemini-api/docs/speech-generation).
+// Passed straight through to Vertex as prebuiltVoiceConfig.voiceName.
+const TTS_VOICE_SUGGESTIONS = [
+  'Zephyr',
+  'Puck',
+  'Charon',
+  'Kore',
+  'Fenrir',
+  'Leda',
+  'Orus',
+  'Aoede',
+  'Callirrhoe',
+  'Autonoe',
+  'Enceladus',
+  'Iapetus',
+  'Umbriel',
+  'Algieba',
+  'Despina',
+  'Erinome',
+  'Algenib',
+  'Rasalgethi',
+  'Laomedeia',
+  'Achernar',
 ];
 
 interface Props {
@@ -45,9 +77,29 @@ const toggleCls = (active: boolean) =>
 
 export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) => {
   const [cfg, setCfg] = useState<AIConfig>({ ...initial });
+  const [testingVoice, setTestingVoice] = useState(false);
+  const [testVoiceError, setTestVoiceError] = useState<string | null>(null);
 
   const set = <K extends keyof AIConfig>(key: K, value: AIConfig[K]) =>
     setCfg(prev => ({ ...prev, [key]: value }));
+
+  // Play a short sample using the current TTS config so the user can hear the
+  // voice before saving (and can confirm the gateway path works).
+  const handleTestVoice = async () => {
+    setTestingVoice(true);
+    setTestVoiceError(null);
+    try {
+      const blob = await speech(cfg, 'Hello! Today we will practice your English speaking skills. This is a voice preview.');
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play();
+    } catch (e) {
+      setTestVoiceError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTestingVoice(false);
+    }
+  };
 
   const handleSave = () => {
     saveConfig(cfg);
@@ -163,12 +215,45 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
               </div>
               {cfg.ttsEngine === 'omniroute' && (
                 <>
-                  <Field label="TTS Model" hint="e.g. openai/tts-1, vertex/gemini-2.5-flash-preview-tts">
-                    <input className={inputCls} value={cfg.ttsModel} onChange={e => set('ttsModel', e.target.value)} />
+                  <Field label="TTS Model" hint="Vertex Gemini TTS models are pre-configured on your gateway">
+                    <input
+                      className={inputCls}
+                      list="tts-model-suggestions"
+                      value={cfg.ttsModel}
+                      onChange={e => set('ttsModel', e.target.value)}
+                      placeholder="vertex/gemini-2.5-flash-preview-tts"
+                    />
+                    <datalist id="tts-model-suggestions">
+                      {TTS_MODEL_SUGGESTIONS.map(m => (
+                        <option key={m} value={m} />
+                      ))}
+                    </datalist>
                   </Field>
-                  <Field label="Voice" hint="e.g. alloy / Zephyr">
-                    <input className={inputCls} value={cfg.ttsVoice} onChange={e => set('ttsVoice', e.target.value)} />
+                  <Field label="Voice" hint="Gemini prebuilt voices, e.g. Zephyr / Puck / Kore">
+                    <input
+                      className={inputCls}
+                      list="tts-voice-suggestions"
+                      value={cfg.ttsVoice}
+                      onChange={e => set('ttsVoice', e.target.value)}
+                      placeholder="Zephyr"
+                    />
+                    <datalist id="tts-voice-suggestions">
+                      {TTS_VOICE_SUGGESTIONS.map(v => (
+                        <option key={v} value={v} />
+                      ))}
+                    </datalist>
                   </Field>
+                  <button
+                    onClick={handleTestVoice}
+                    disabled={testingVoice}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 transition-all"
+                  >
+                    {testingVoice ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                    {testingVoice ? 'Testing…' : 'Test voice'}
+                  </button>
+                  {testVoiceError && (
+                    <p className="text-[11px] text-red-500 dark:text-red-400 mt-1 break-words">{testVoiceError}</p>
+                  )}
                 </>
               )}
             </div>

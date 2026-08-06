@@ -142,10 +142,15 @@ App hoạt động với **bất kỳ gateway AI nào hỗ trợ API OpenAI-comp
 
 | Engine | Mô tả |
 |---|---|
-| **Browser** *(mặc định)* | `speechSynthesis` — phát âm trực tiếp, không cần key |
-| **Gateway** | Gửi `/v1/audio/speech` lên gateway. Cần gateway hỗ trợ endpoint này + credentials provider (VD: `openai/tts-1`, `vertex/gemini-2.5-flash-preview-tts`) + chọn **voice** (VD: `alloy`) |
+| **Browser** *(mặc định)* | `speechSynthesis` — phát âm trực tiếp, không cần key. Giọng phụ thuộc vào hệ điều hành/trình duyệt. |
+| **Gateway** | Gửi `/v1/audio/speech` lên gateway → **Vertex Gemini TTS** cho giọng tự nhiên hơn hẳn. Chọn **model** (VD: `vertex/gemini-2.5-flash-preview-tts`) + **voice Gemini** (VD: `Zephyr`, `Puck`, `Kore`). Nút **Test voice** trong Settings để nghe thử trước khi lưu. |
 
-> **Khuyến nghị**: Để trải nghiệm tốt nhất ngay lập tức — chỉ cần cấu hình chat model, giữ STT/TTS ở **Browser**. Chuyển sang engine **Gateway** khi provider của bạn có hỗ trợ STT/TTS.
+> **Khuyến nghị giọng Gateway (Gemini TTS)**: Model mặc định là `vertex/gemini-2.5-flash-preview-tts`, voice `Zephyr` — app đã gợi ý sẵn trong dropdown Settings. Để dùng được, gateway phải có credentials Vertex và project GCP phải **bật các model TTS** trong Organization Policy:
+> 1. Mở Google Cloud Console → **Organization Policies**.
+> 2. Tìm ràng buộc `constraints/vertexai.allowedModels`.
+> 3. Thêm `publishers/google/models/gemini-2.5-flash-preview-tts`, `.../gemini-2.5-pro-preview-tts`, `.../gemini-3.1-flash-tts-preview` vào danh sách allowed.
+>
+> Nếu chưa cấu hình được GCP, giữ engine **Browser** là vẫn dùng được ngay (không cần key).
 
 ---
 
@@ -190,6 +195,8 @@ Giữ nút **🎤 Hold to Speak** → nói → nhả nút → audio gửi lên O
 ## 📝 Định dạng output của model
 
 Model Coach output các **text block đặc biệt** mà app tự động parse (thay cho tool calls cũ):
+
+> 💬 **Lượt trả lời dài**: Coach **không dừng ở sửa lỗi/suggest** — luôn mở rộng hội thoại thêm **2–3 câu dựa trên câu bạn vừa nói** (phản hồi nội dung → mở rộng cách diễn đạt → 1 câu hỏi tiếp nối) để cuộc trò chuyện tiếp tục tự nhiên. Chỉnh hành vi này trong `SYSTEM_INSTRUCTION` của `constants.ts`.
 
 ### `[Correction]` → Thẻ Correction
 
