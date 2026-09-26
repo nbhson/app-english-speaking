@@ -221,15 +221,21 @@ export async function translateWord(config: AIConfig, word: string): Promise<Wor
       {
         role: 'system',
         content:
-          'You are a dictionary. Translate the given English word to Vietnamese. ' +
-          'Return ONLY a JSON object with no markdown fences: ' +
-          '{"translation":"<Vietnamese>","ipa":"<IPA pronunciation>","example":"<one short English example sentence>"}',
+          'You are a precise bilingual dictionary (English→Vietnamese). ' +
+          'Deterministic, temperature 0. ' +
+          'Return ONLY a single valid JSON object, no markdown fences, no extra text, no explanation. ' +
+          'Schema: {"translation":"<concise Vietnamese meaning, 1-3 words>","ipa":"/<IPA with slashes, e.g. /həˈloʊ/>","example":"<one natural English example ≤15 words>"} ' +
+          'If the word is unknown/misspelled, still return JSON with best guess translation and empty ipa/example as "".',
       },
       { role: 'user', content: word },
     ]);
     const match = raw.match(/\{[\s\S]*\}/);
     const parsed = JSON.parse(match ? match[0] : raw);
-    return { translation: parsed.translation ?? raw.trim(), ipa: parsed.ipa ?? '', example: parsed.example ?? '' };
+    return {
+      translation: (parsed.translation ?? raw.trim()).toString().slice(0, 80),
+      ipa: (parsed.ipa ?? '').toString().slice(0, 40),
+      example: (parsed.example ?? '').toString().slice(0, 120),
+    };
   } catch (e) {
     console.error('Word translation error', e);
     return null;
@@ -238,15 +244,19 @@ export async function translateWord(config: AIConfig, word: string): Promise<Wor
 
 export async function translatePhrase(config: AIConfig, text: string): Promise<string | null> {
   try {
-    return await chatOnce(config, [
+    const result = await chatOnce(config, [
       {
         role: 'system',
         content:
-          'You are a translator. Translate the given text to natural Vietnamese. ' +
-          'Return ONLY the translated string with no explanations, quotes or markdown.',
+          'You are a precise translator (English→Vietnamese). ' +
+          'Translate to natural, conversational Vietnamese (not literary/Hán-Việt). ' +
+          'Keep proper nouns, code, and numbers unchanged. ' +
+          'Return ONLY the translated string, no quotes, no markdown, no explanation, no alternative.',
       },
       { role: 'user', content: text },
     ]);
+    // Strip accidental quotes/fences the model might add
+    return result.trim().replace(/^["'`“”]+|["'`“”]+$/g, '').replace(/^```.*\n?/, '').replace(/```$/,'').trim() || null;
   } catch (e) {
     console.error('Phrase translation error', e);
     return null;
