@@ -1,0 +1,135 @@
+import React from 'react';
+import { motion } from 'motion/react';
+import { Search } from 'lucide-react';
+import type { SessionAssessment } from '../types';
+import { deriveInsight } from '../utils/assessment';
+
+export const SessionStat: React.FC<{
+  icon: string;
+  label: string;
+  value: string | number;
+  unit?: string;
+}> = ({ icon, label, value, unit = '' }) => (
+  <div className="flex flex-col items-center justify-center p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
+    <span className="text-xl mb-1" aria-hidden>
+      {icon}
+    </span>
+    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</span>
+    <span className="text-sm font-bold text-slate-900 dark:text-white">
+      {value}
+      {unit}
+    </span>
+  </div>
+);
+
+export const AssessmentBar: React.FC<{ label: string; value: number }> = ({ label, value }) => {
+  const percentage = (value / 5) * 100;
+  return (
+    <div className="flex items-center gap-4">
+      <div className="w-36 md:w-48 text-right shrink-0">
+        <span className="text-[11px] font-bold text-[#2D8A82] dark:text-[#4ade80] uppercase tracking-wider">
+          {label}
+        </span>
+      </div>
+      <div
+        className="flex-1 h-6 bg-slate-100 dark:bg-slate-800 rounded-sm relative overflow-hidden border border-slate-200 dark:border-slate-700"
+        role="progressbar"
+        aria-valuenow={value}
+        aria-valuemin={0}
+        aria-valuemax={5}
+        aria-label={`${label}: ${value} out of 5`}
+      >
+        <div
+          className="absolute inset-0 opacity-20"
+          style={{
+            backgroundImage: `radial-gradient(#2D8A82 1px, transparent 1px)`,
+            backgroundSize: '4px 4px',
+          }}
+        />
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${percentage}%` }}
+          transition={{ duration: 1, ease: 'easeOut' }}
+          className="absolute inset-y-0 left-0 bg-[#2D8A82] dark:bg-[#2D8A82]"
+        />
+      </div>
+      <div className="w-8">
+        <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{value}/5</span>
+      </div>
+    </div>
+  );
+};
+
+interface AssessmentPanelProps {
+  assessment: SessionAssessment;
+  hasData: boolean;
+  duration: number;
+}
+
+export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, hasData, duration }) => (
+  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm flex flex-col h-full transition-colors">
+    <h3 className="text-lg font-bold mb-6 md:mb-8 flex items-center gap-2 text-slate-800 dark:text-white">
+      <span className="text-[#2D8A82]" aria-hidden>
+        📊
+      </span>{' '}
+      Session Statistics
+    </h3>
+
+    <div className="grid grid-cols-3 gap-3 mb-8">
+      <SessionStat
+        icon="⏱️"
+        label="Duration"
+        value={`${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, '0')}`}
+      />
+      <SessionStat icon="📚" label="Vocab" value={assessment.vocabularyPoints} unit=" pts" />
+      <SessionStat icon="💪" label="Confidence" value={assessment.confidenceLevel} unit="%" />
+    </div>
+
+    <h3 className="text-lg font-bold mb-6 md:mb-8 flex items-center gap-2 text-slate-800 dark:text-white">
+      <span className="text-blue-600" aria-hidden>
+        🎯
+      </span>{' '}
+      Comprehensive Assessment
+    </h3>
+
+    <div className="space-y-4 flex-1">
+      {!hasData ? (
+        <div className="h-full flex flex-col items-center justify-center text-center px-4">
+          <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 border border-slate-100 dark:border-slate-700">
+            <Search className="text-slate-300 dark:text-slate-600" size={24} />
+          </div>
+          <p className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight mb-1">
+            Waiting for analysis
+          </p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
+            Start speaking with your coach. Your performance will be analyzed and displayed here in
+            real-time.
+          </p>
+        </div>
+      ) : (
+        <>
+          <AssessmentBar label="Fluency" value={assessment.fluency} />
+          <AssessmentBar label="Listening" value={assessment.listening} />
+          <AssessmentBar label="Reflexing" value={assessment.reflexing} />
+          <AssessmentBar label="Sentence Flexibility" value={assessment.sentenceFlexibility} />
+          <AssessmentBar label="Vocabulary Flexibility" value={assessment.vocabularyFlexibility} />
+          <AssessmentBar label="Intonation" value={assessment.intonation} />
+          <AssessmentBar label="Linking" value={assessment.linking} />
+          <AssessmentBar label="Final Sound" value={assessment.finalSound} />
+          <AssessmentBar label="Stress" value={assessment.stress} />
+        </>
+      )}
+    </div>
+
+    <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
+      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 border border-slate-100 dark:border-slate-700">
+        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2">
+          Coach Insight
+        </p>
+        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed italic">
+          {!hasData ? 'Your coach will provide personalized insights here once the session begins.' : assessment.insight || deriveInsight(assessment)}
+        </p>
+      </div>
+    </div>
+  </div>
+);

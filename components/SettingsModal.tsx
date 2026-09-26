@@ -18,7 +18,7 @@ const MODEL_SUGGESTIONS = [
   'gemini/gemini-3.5-flash',
 ];
 
-// Vertex Gemini TTS models exposed by the gateway (see OmniRoute audioRegistry).
+// Vertex Gemini TTS models exposed by the custom provider gateway.
 const TTS_MODEL_SUGGESTIONS = [
   'vertex/gemini-3.1-flash-tts-preview',
   'vertex/gemini-2.5-flash-preview-tts',
@@ -184,12 +184,12 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
                 <button className={toggleCls(cfg.sttEngine === 'browser')} onClick={() => set('sttEngine', 'browser')}>
                   Browser (Web Speech)
                 </button>
-                <button className={toggleCls(cfg.sttEngine === 'omniroute')} onClick={() => set('sttEngine', 'omniroute')}>
-                  Gateway
+                <button className={toggleCls(cfg.sttEngine === 'custom')} onClick={() => set('sttEngine', 'custom')}>
+                  Custom Provider
                 </button>
               </div>
-              {cfg.sttEngine === 'omniroute' && (
-                <Field label="STT Model" hint="Requires provider credentials on the gateway (e.g. deepgram/nova-3, assemblyai/best)">
+              {cfg.sttEngine === 'custom' && (
+                <Field label="STT Model" hint="Requires provider credentials on the custom provider (e.g. deepgram/nova-3, assemblyai/best)">
                   <input className={inputCls} value={cfg.sttModel} onChange={e => set('sttModel', e.target.value)} />
                 </Field>
               )}
@@ -209,13 +209,13 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
                 <button className={toggleCls(cfg.ttsEngine === 'browser')} onClick={() => set('ttsEngine', 'browser')}>
                   Browser
                 </button>
-                <button className={toggleCls(cfg.ttsEngine === 'omniroute')} onClick={() => set('ttsEngine', 'omniroute')}>
-                  Gateway
+                <button className={toggleCls(cfg.ttsEngine === 'custom')} onClick={() => set('ttsEngine', 'custom')}>
+                  Custom Provider
                 </button>
               </div>
-              {cfg.ttsEngine === 'omniroute' && (
+              {cfg.ttsEngine === 'custom' && (
                 <>
-                  <Field label="TTS Model" hint="Vertex Gemini TTS models are pre-configured on your gateway">
+                  <Field label="TTS Model" hint="Vertex Gemini TTS models are pre-configured on your custom provider">
                     <input
                       className={inputCls}
                       list="tts-model-suggestions"

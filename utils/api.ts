@@ -1,17 +1,17 @@
 
-// --- OmniRoute API client + config ---
+// --- Custom Provider API client + config ---
 // All LLM traffic (chat, STT, TTS) goes through a configurable OpenAI-compatible
-// base URL. Defaults point at a local OmniRoute gateway. The chat model is the
-// "brain"; STT/TTS can run on the browser (Web Speech API) or through OmniRoute.
+// base URL. Defaults point at a local custom provider gateway. The chat model is the
+// "brain"; STT/TTS can run on the browser (Web Speech API) or through the custom provider.
 
 export interface AIConfig {
   baseUrl: string;        // e.g. http://localhost:20128/v1
-  apiKey: string;         // Bearer token (may be empty on local OmniRoute)
+  apiKey: string;         // Bearer token (may be empty on local custom provider)
   model: string;          // chat model, e.g. gemini/gemini-3-flash-preview
-  sttEngine: 'browser' | 'omniroute';
-  sttModel: string;       // e.g. deepgram/nova-3 (only used when sttEngine=omniroute)
-  ttsEngine: 'browser' | 'omniroute';
-  ttsModel: string;       // e.g. openai/tts-1 (only used when ttsEngine=omniroute)
+  sttEngine: 'browser' | 'custom';
+  sttModel: string;       // e.g. deepgram/nova-3 (only used when sttEngine=custom)
+  ttsEngine: 'browser' | 'custom';
+  ttsModel: string;       // e.g. openai/tts-1 (only used when ttsEngine=custom)
   ttsVoice: string;       // e.g. alloy / Zephyr
 }
 
@@ -32,7 +32,13 @@ export function loadConfig(): AIConfig {
   if (typeof window === 'undefined') return { ...DEFAULT_CONFIG };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<AIConfig> & Record<string, unknown>;
+      // Migrate legacy 'omniroute' value to 'custom'
+      if ((parsed.sttEngine as string) === 'omniroute') parsed.sttEngine = 'custom' as AIConfig['sttEngine'];
+      if ((parsed.ttsEngine as string) === 'omniroute') parsed.ttsEngine = 'custom' as AIConfig['ttsEngine'];
+      return { ...DEFAULT_CONFIG, ...parsed };
+    }
   } catch (e) {
     console.error('Failed to load config', e);
   }
@@ -42,6 +48,11 @@ export function loadConfig(): AIConfig {
 export function saveConfig(cfg: AIConfig): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+    if (cfg.apiKey) {
+      console.warn(
+        'API key is stored in localStorage (plaintext). Only use with a local gateway or ensure the page is served over HTTPS and protected from XSS.'
+      );
+    }
   } catch (e) {
     console.error('Failed to save config', e);
   }
@@ -65,6 +76,7 @@ function buildHeaders(config: AIConfig, extra?: Record<string, string>): Record<
 /**
  * Stream a chat completion. Calls onDelta with each text chunk as it arrives
  * and resolves with the full assistant text when done.
+ * Robust SSE: handles \r\n, comments, empty keep-alives and aborts via AbortSignal.
  */
 export async function chatStream(
   config: AIConfig,
@@ -91,28 +103,56 @@ export async function chatStream(
   let buffer = '';
   let full = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    let newlineIndex: number;
-    while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, newlineIndex).trim();
-      buffer = buffer.slice(newlineIndex + 1);
-      if (!line.startsWith('data:')) continue;
-      const payload = line.slice(5).trim();
-      if (!payload || payload === '[DONE]') continue;
-      try {
-        const parsed = JSON.parse(payload);
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (typeof delta === 'string' && delta.length > 0) {
-          full += delta;
-          onDelta(delta);
-        }
-      } catch {
-        // Ignore malformed SSE chunks.
+  const processLine = (rawLine: string) => {
+    const line = rawLine.trim();
+    if (!line) return;
+    // SSE comments start with ':'
+    if (line.startsWith(':')) return;
+    if (!line.startsWith('data:')) return;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') return;
+    try {
+      const parsed = JSON.parse(payload);
+      // Support both delta (stream) and message (non-stream fallback)
+      const delta: unknown =
+        parsed.choices?.[0]?.delta?.content ?? parsed.choices?.[0]?.message?.content;
+      if (typeof delta === 'string' && delta.length > 0) {
+        full += delta;
+        onDelta(delta);
       }
+      // Surface API errors encoded in SSE
+      if (parsed.error) {
+        throw new Error(parsed.error.message || JSON.stringify(parsed.error));
+      }
+    } catch (e) {
+      // Re-throw real errors, ignore JSON parse noise
+      if (e instanceof SyntaxError) return;
+      throw e;
+    }
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+      buffer += decoder.decode(value, { stream: true });
+      // Handle both \n and \r\n
+      let idx: number;
+      while ((idx = buffer.search(/\r?\n/)) >= 0) {
+        const isCRLF = buffer[idx] === '\r';
+        const line = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + (isCRLF ? 2 : 1));
+        processLine(line);
+      }
+    }
+    // Flush remaining buffer (no trailing newline)
+    if (buffer.trim()) processLine(buffer);
+  } finally {
+    try {
+      reader.cancel();
+    } catch {
+      /* ignore */
     }
   }
   return full;
@@ -134,7 +174,7 @@ export async function chatOnce(config: AIConfig, messages: ChatMessage[]): Promi
   return data.choices?.[0]?.message?.content ?? '';
 }
 
-/** STT through OmniRoute (/v1/audio/transcriptions, multipart). */
+/** STT through custom provider (/v1/audio/transcriptions, multipart). */
 export async function transcribe(config: AIConfig, blob: Blob): Promise<string> {
   const url = `${baseUrl(config)}/audio/transcriptions`;
   const form = new FormData();
@@ -152,7 +192,7 @@ export async function transcribe(config: AIConfig, blob: Blob): Promise<string> 
   return data.text || '';
 }
 
-/** TTS through OmniRoute (/v1/audio/speech) — returns the audio blob. */
+/** TTS through custom provider (/v1/audio/speech) — returns the audio blob. */
 export async function speech(config: AIConfig, text: string): Promise<Blob> {
   const url = `${baseUrl(config)}/audio/speech`;
   const res = await fetch(url, {

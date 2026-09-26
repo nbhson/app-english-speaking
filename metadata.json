@@ -1,6 +1,6 @@
 {
   "name": "AI English Speaking Coach",
-  "description": "A professional AI-powered English speaking coach designed specifically for software developers to master daily conversations, business meetings, and presentations using the Gemini Live API.",
+  "description": "A professional AI-powered English speaking coach for developers to master daily conversations, business meetings and presentations via turn-based voice (STT → OpenAI-compatible chat → TTS).",
   "requestFramePermissions": [
     "microphone"
   ]

@@ -27,7 +27,7 @@
   - [🔄 Luồng voice hoạt động](#-luồng-voice-hoạt-động)
     - [Chế độ voice (Daily / Meeting / Presentation / Custom)](#chế-độ-voice-daily--meeting--presentation--custom)
     - [Chế độ VN→EN Helper](#chế-độ-vnen-helper)
-    - [Push-to-talk (khi STT = OmniRoute)](#push-to-talk-khi-stt--omniroute)
+    - [Push-to-talk (khi STT = Custom Provider)](#push-to-talk-khi-stt--custom-provider)
   - [📝 Định dạng output của model](#-định-dạng-output-của-model)
     - [`[Correction]` → Thẻ Correction](#correction--thẻ-correction)
     - [`[Assessment]` → Dashboard điểm số](#assessment--dashboard-điểm-số)
@@ -67,9 +67,9 @@
 - **Styling**: Tailwind CSS (qua CDN) + [Motion](https://motion.dev/) (Framer Motion) cho animation
 - **Icons**: lucide-react
 - **Voice**:
-  - **STT** (Speech-to-Text): Web Speech API (browser) *hoặc* OmniRoute `/v1/audio/transcriptions`
-  - **TTS** (Text-to-Speech): `speechSynthesis` (browser) *hoặc* OmniRoute `/v1/audio/speech`
-- **AI**: OpenAI-compatible endpoint (mặc định là **OmniRoute** gateway cục bộ)
+  - **STT** (Speech-to-Text): Web Speech API (browser) *hoặc* custom provider `/v1/audio/transcriptions`
+  - **TTS** (Text-to-Speech): `speechSynthesis` (browser) *hoặc* custom provider `/v1/audio/speech`
+- **AI**: OpenAI-compatible endpoint (mặc định là **custom provider** gateway cục bộ)
 
 ---
 
@@ -78,18 +78,18 @@
 Ứng dụng được **migrate khỏi Gemini Live API** (WebSocket) sang kiến trúc **turn-based voice** (đơn giản, tương thích mọi gateway OpenAI-compatible):
 
 ```
- ┌──────────┐   STT (Web Speech / OmniRoute)   ┌─────────────────┐
- │  User    │ ───────────────────────────────▶ │  Transcript text │
- └──────────┘                                   └─────────────────┘
-                                                          │
-                                                          ▼
- ┌──────────┐   TTS (speechSynthesis / OmniRoute)  ┌────────────────────────────┐
- │ Speaker  │ ◀─────────────────────────────────── │  /v1/chat/completions (SSE) │
- └──────────┘        voice trả lời                 │  OmniRoute / any OpenAI-compat │
-                                                   └────────────────────────────┘
+ ┌──────────┐   STT (Web Speech / Custom Provider)   ┌─────────────────┐
+ │  User    │ ─────────────────────────────────────▶ │  Transcript text │
+ └──────────┘                                         └─────────────────┘
+                                                                │
+                                                                ▼
+ ┌──────────┐   TTS (speechSynthesis / Custom Provider)  ┌────────────────────────────┐
+ │ Speaker  │ ◀───────────────────────────────────────── │  /v1/chat/completions (SSE) │
+ └──────────┘        voice trả lời                       │  Custom provider / any OpenAI-compat │
+                                                         └────────────────────────────┘
 ```
 
-**Nguyên tắc**: Model chat là "bộ não" — **bắt buộc cấu hình** (base URL + model). STT/TTS **mặc định chạy trên browser** (không cần key) và có thể chuyển qua OmniRoute khi có credentials.
+**Nguyên tắc**: Model chat là "bộ não" — **bắt buộc cấu hình** (base URL + model). STT/TTS **mặc định chạy trên browser** (không cần key) và có thể chuyển qua custom provider khi có credentials.
 
 ---
 
@@ -108,10 +108,10 @@ npm run dev
 #    http://localhost:3000
 ```
 
-> ⚠️ **Bắt buộc**: Đảm bảo gateway AI đang chạy trước khi dùng. Với OmniRoute cục bộ:
+> ⚠️ **Bắt buộc**: Đảm bảo gateway AI đang chạy trước khi dùng. Với custom provider cục bộ:
 >
 > ```bash
-> cd /Users/nguyenson/Github/OmniRoute
+> # ví dụ custom provider chạy tại http://localhost:20128
 > npm run dev        # chạy tại http://localhost:20128
 > ```
 
@@ -119,16 +119,16 @@ npm run dev
 
 ## ⚙️ Cấu hình kết nối AI
 
-App hoạt động với **bất kỳ gateway AI nào hỗ trợ API OpenAI-compatible** (chat completions) — ví dụ: OmniRoute, OpenAI, OpenRouter, vLLM, LM Studio, Ollama (qua adapter)… Bấm icon **⚙️ Settings** (góc trên phải) để mở modal cấu hình. Mọi thay đổi được lưu vào `localStorage` (key `fluentdev-ai-config`) — chỉ cần lưu là áp dụng ngay.
+App hoạt động với **bất kỳ gateway AI nào hỗ trợ API OpenAI-compatible** (chat completions) — ví dụ: custom provider, OpenAI, OpenRouter, vLLM, LM Studio, Ollama (qua adapter)… Bấm icon **⚙️ Settings** (góc trên phải) để mở modal cấu hình. Mọi thay đổi được lưu vào `localStorage` (key `fluentdev-ai-config`) — chỉ cần lưu là áp dụng ngay.
 
-> Giá trị mặc định trỏ vào **OmniRoute** cục bộ (`http://localhost:20128/v1`) chỉ là ví dụ — bạn hoàn toàn có thể trỏ sang provider khác.
+> Giá trị mặc định trỏ vào **custom provider** cục bộ (`http://localhost:20128/v1`) chỉ là ví dụ — bạn hoàn toàn có thể trỏ sang provider khác.
 
 ### 🧠 Chat Model (bộ não) — bắt buộc
 
 | Field | Giá trị mặc định | Ghi chú |
 |---|---|---|
 | **Base URL** | `http://localhost:20128/v1` | Endpoint OpenAI-compatible của gateway (VD: `https://api.openai.com/v1`, `https://openrouter.ai/api/v1`, ...) |
-| **API Key** | *(trống)* | Local gateway thường không cần (VD: OmniRoute `REQUIRE_API_KEY=false`). Gateway remote thì bắt buộc (Bearer token) |
+| **API Key** | *(trống)* | Local gateway thường không cần (VD: custom provider `REQUIRE_API_KEY=false`). Gateway remote thì bắt buộc (Bearer token) |
 | **Model** | `gemini/gemini-3-flash-preview` | Bất kỳ model nào gateway expose. VD: `gpt-4o`, `claude-...`, `gemini/...`, `auto/best-chat`... |
 
 ### 🎙️ Speech-to-Text (STT)
@@ -186,9 +186,9 @@ App hoạt động với **bất kỳ gateway AI nào hỗ trợ API OpenAI-comp
 2. Model trả về: gợi ý tiếng Anh tự nhiên + giải thích bằng tiếng Việt
 3. Dùng nút **X** để dừng phiên (Stop Session)
 
-### Push-to-talk (khi STT = OmniRoute)
+### Push-to-talk (khi STT = Custom Provider)
 
-Giữ nút **🎤 Hold to Speak** → nói → nhả nút → audio gửi lên OmniRoute dịch thành text → chảy vào cùng vòng lặp.
+Giữ nút **🎤 Hold to Speak** → nói → nhả nút → audio gửi lên custom provider dịch thành text → chảy vào cùng vòng lặp.
 
 ---
 
@@ -263,7 +263,7 @@ ai-english-speaking-coach/
 └── components/
 │   └── SettingsModal.tsx        # UI cấu hình kết nối AI (localStorage)
 └── utils/
-    └── api.ts                   # Config + OmniRoute client (chat/STT/TTS + translate)
+    └── api.ts                   # Config + custom provider client (chat/STT/TTS + translate)
 ```
 
 ### Các module chính
@@ -295,7 +295,7 @@ ai-english-speaking-coach/
 | **"Chat failed (…)"** | Kiểm tra gateway AI đang chạy (`localhost:20128`), đúng Base URL và Model trong Settings |
 | **Web Speech API không hỗ trợ** | Dùng Chrome/Edge, hoặc chuyển STT sang **Gateway** trong Settings |
 | **Microphone bị từ chối** | Vào cài đặt trình duyệt → cho phép quyền microphone với `localhost` |
-| **STT/TTS OmniRoute lỗi** | Chưa cấu hình credentials trong OmniRoute → thêm `DEEPGRAM_API_KEY` / `OPENAI_API_KEY`... hoặc quay về Browser engine |
+| **STT/TTS custom provider lỗi** | Chưa cấu hình credentials trong custom provider → thêm `DEEPGRAM_API_KEY` / `OPENAI_API_KEY`... hoặc quay về Browser engine |
 | **Không nghe thấy giọng đọc** | Kiểm tra volume hệ thống; với engine Browser đảm bảo trình duyệt có tiếng; bấm 🔊 trên từ để kiểm tra |
 
 ---
@@ -303,12 +303,12 @@ ai-english-speaking-coach/
 ## 🗺️ Roadmap
 
 - [x] Config base URL / API key / model trong UI
-- [x] Kết nối AI model qua OmniRoute gateway
+- [x] Kết nối AI model qua custom provider gateway
 - [x] Turn-based voice (STT → chat → TTS)
 - [x] Comprehensive Assessment hiển thị qua đánh giá AI (Coach Insight)
 - [x] Toggle Auto-listen / nút Continue thủ công
 - [ ] Test đầy đủ luồng voice (mic) qua Web Speech API
-- [ ] Cấu hình credentials OmniRoute cho STT/TTS providers
+- [ ] Cấu hình credentials custom provider cho STT/TTS providers
 - [ ] Lưu lịch sử session
 - [ ] Nhiều profile config cho nhiều provider
 
