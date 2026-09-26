@@ -1,0 +1,16 @@
+{
+  "name": "FluentDev AI Coach",
+  "short_name": "FluentDev",
+  "description": "AI English Speaking Coach for developers",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

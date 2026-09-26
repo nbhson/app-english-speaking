@@ -62,8 +62,8 @@ export const SelectionTranslator: React.FC<Props> = ({ config }) => {
   return (
     <div
       data-selection-translator
-      className="fixed z-[100] -translate-x-1/2 -translate-y-full mb-4"
-      style={{ left: selection.x, top: selection.y - 8 }}
+      className="fixed z-[100] -translate-x-1/2 -translate-y-full mb-4 max-w-[calc(100vw-2rem)]"
+      style={{ left: `clamp(8rem, ${selection.x}px, calc(100vw - 8rem))`, top: selection.y - 8 }}
       role="dialog"
       aria-label="Phrase translator"
     >
@@ -72,7 +72,7 @@ export const SelectionTranslator: React.FC<Props> = ({ config }) => {
           initial={{ opacity: 0, scale: 0.9, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 10 }}
-          className="bg-slate-900/95 backdrop-blur-md text-white rounded-2xl shadow-2xl p-4 min-w-[200px] max-w-xs border border-white/10"
+          className="bg-slate-900/95 backdrop-blur-md text-white rounded-2xl shadow-2xl p-4 min-w-[200px] max-w-[calc(100vw-3rem)] sm:max-w-xs border border-white/10"
         >
           {!translation && !loading ? (
             <button

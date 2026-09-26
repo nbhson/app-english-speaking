@@ -4,8 +4,12 @@ export enum AppMode {
   MEETING = 'meeting',
   PRESENTATION = 'presentation',
   CUSTOM = 'custom',
-  TRANSLATE = 'translate'
+  TRANSLATE = 'translate',
+  SHADOW = 'shadow'
 }
+
+export type Difficulty = 'beginner' | 'intermediate' | 'advanced';
+export type CoachPersona = 'encouraging' | 'strict' | 'professional';
 
 export interface SessionAssessment {
   fluency: number;
@@ -30,6 +34,60 @@ export interface TranscriptionEntry {
   suggestion?: string; // Natural phrasing suggestion for a user message
   translation?: string; // Full-sentence translation
   assessment?: Partial<SessionAssessment>; // Optional assessment update
+  wpm?: number; // measured speaking speed for user turns
+  fillerCount?: number; // filler words detected in user turns
+}
+
+export interface SpeechMetrics {
+  wpm: number;
+  wordCount: number;
+  fillerCount: number;
+  fillerWords: string[];
+  charCount: number;
+  estimatedSeconds: number;
+}
+
+export interface MistakeEntry {
+  id: string;
+  original: string;
+  corrected: string;
+  alternative: string;
+  explanation: string;
+  mode: AppMode;
+  createdAt: number;
+  reviewCount: number;
+  mastered?: boolean;
+}
+
+export interface VocabEntry {
+  id: string;
+  word: string;
+  translation: string;
+  ipa: string;
+  example: string;
+  createdAt: number;
+  reviewCount: number;
+}
+
+export interface SessionRecord {
+  id: string;
+  mode: AppMode;
+  startedAt: number;
+  endedAt: number;
+  durationSec: number;
+  turns: number;
+  corrections: number;
+  avgScore: number; // avg of 9 skills 0-5
+  vocabPoints: number;
+  confidence: number;
+  transcript: TranscriptionEntry[];
+}
+
+export interface ProgressDay {
+  date: string; // YYYY-MM-DD
+  sessions: number;
+  minutes: number;
+  xp: number;
 }
 
 export interface SessionState {

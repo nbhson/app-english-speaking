@@ -307,10 +307,16 @@ ai-english-speaking-coach/
 - [x] Turn-based voice (STT → chat → TTS)
 - [x] Comprehensive Assessment hiển thị qua đánh giá AI (Coach Insight)
 - [x] Toggle Auto-listen / nút Continue thủ công
-- [ ] Test đầy đủ luồng voice (mic) qua Web Speech API
-- [ ] Cấu hình credentials custom provider cho STT/TTS providers
-- [ ] Lưu lịch sử session
-- [ ] Nhiều profile config cho nhiều provider
+- [x] Text-input fallback mọi mode + replay/interrupt Coach + copy/download transcript
+- [x] Safari iOS / Firefox fallback (banner + gợi ý Hold-to-Speak)
+- [x] Browser voice picker + tốc độ/pitch + Test voice
+- [x] Lưu lịch sử session + sổ lỗi [Correction] + sổ từ vựng + streak/XP + chart 14 ngày
+- [x] Metrics thật: WPM, filler words, CEFR badge, XP/session
+- [x] Mode Shadowing + Difficulty (beginner/intermediate/advanced) + Persona + custom system prompt
+- [x] Nhiều profile config cho nhiều provider
+- [x] Vitest: assessment parser + speech metrics (5 tests)
+- [x] PWA manifest + mobile drawer
+- [ ] Cấu hình credentials custom provider cho STT/TTS providers (tùy gateway của bạn)
 
 ---
 

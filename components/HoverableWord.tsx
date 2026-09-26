@@ -1,9 +1,10 @@
 import React, { useState, useRef } from 'react';
-import { Volume2 } from 'lucide-react';
+import { Volume2, BookmarkPlus, Check } from 'lucide-react';
 import type { AIConfig, WordInfo } from '../utils/api';
 import { translateWord } from '../utils/api';
 import { translationCache } from '../utils/translationCache';
 import { speakWordFireAndForget } from '../utils/tts';
+import { saveVocab } from '../utils/storage';
 
 interface Props {
   word: string;
@@ -14,6 +15,7 @@ export const HoverableWord: React.FC<Props> = ({ word, config }) => {
   const [showTooltip, setShowTooltip] = useState(false);
   const [data, setData] = useState<WordInfo | null>(null);
   const [loading, setLoading] = useState(false);
+  const [saved, setSaved] = useState(false);
   const hoverTimeout = useRef<number | null>(null);
 
   const cleanWord = word.replace(/[^\w]/g, '').toLowerCase();
@@ -76,7 +78,7 @@ export const HoverableWord: React.FC<Props> = ({ word, config }) => {
     >
       {word}
       {showTooltip && (
-        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-56 animate-in fade-in zoom-in duration-200">
+        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-56 max-w-[70vw] animate-in fade-in zoom-in duration-200">
           <span className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-2xl rounded-2xl p-4 text-slate-800 dark:text-slate-200 text-xs block">
             {loading ? (
               <span className="flex items-center space-x-2 py-1">
@@ -100,6 +102,19 @@ export const HoverableWord: React.FC<Props> = ({ word, config }) => {
                       aria-label={`Listen to pronunciation of ${word}`}
                     >
                       <Volume2 size={12} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        saveVocab({ word: cleanWord, translation: data.translation, ipa: data.ipa, example: data.example });
+                        setSaved(true);
+                        setTimeout(() => setSaved(false), 1500);
+                      }}
+                      className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full text-slate-400 hover:text-green-600 transition-colors"
+                      aria-label={`Save ${word} to vocab notebook`}
+                      title="Save to vocab notebook"
+                    >
+                      {saved ? <Check size={12} className="text-green-600" /> : <BookmarkPlus size={12} />}
                     </button>
                   </span>
                   <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">

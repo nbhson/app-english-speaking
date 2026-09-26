@@ -13,6 +13,13 @@ export interface AIConfig {
   ttsEngine: 'browser' | 'custom';
   ttsModel: string;       // e.g. openai/tts-1 (only used when ttsEngine=custom)
   ttsVoice: string;       // e.g. alloy / Zephyr
+  // --- new: voice + coach personalization ---
+  ttsRate?: number;       // browser speechSynthesis rate 0.5-2 (default 1)
+  ttsPitch?: number;      // browser speechSynthesis pitch 0-2 (default 1)
+  ttsVoiceURI?: string;   // preferred browser voice (voiceURI/name/lang)
+  difficulty?: 'beginner' | 'intermediate' | 'advanced';
+  persona?: 'encouraging' | 'strict' | 'professional';
+  systemPromptOverride?: string; // full override of SYSTEM_INSTRUCTION
 }
 
 export const DEFAULT_CONFIG: AIConfig = {
@@ -24,6 +31,12 @@ export const DEFAULT_CONFIG: AIConfig = {
   ttsEngine: 'browser',
   ttsModel: 'vertex/gemini-2.5-flash-preview-tts',
   ttsVoice: 'Zephyr',
+  ttsRate: 1,
+  ttsPitch: 1,
+  ttsVoiceURI: '',
+  difficulty: 'intermediate',
+  persona: 'encouraging',
+  systemPromptOverride: '',
 };
 
 const STORAGE_KEY = 'fluentdev-ai-config';

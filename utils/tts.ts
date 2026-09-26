@@ -1,5 +1,6 @@
 import type { AIConfig } from './api';
 import { speech } from './api';
+import { pickVoiceByURI } from './browser';
 
 /**
  * Speak text using configured TTS engine.
@@ -42,8 +43,10 @@ export async function speakWord(config: AIConfig, text: string): Promise<void> {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(clean);
     utterance.lang = 'en-US';
-    utterance.rate = 1;
-    utterance.pitch = 1;
+    utterance.rate = config.ttsRate ?? 1;
+    utterance.pitch = config.ttsPitch ?? 1;
+    const v = pickVoiceByURI(config.ttsVoiceURI);
+    if (v) utterance.voice = v;
     window.speechSynthesis.speak(utterance);
   }
 }

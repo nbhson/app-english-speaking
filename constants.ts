@@ -92,7 +92,20 @@ MODES:
 - /presentation: Presentation skills mode (English only, clear structure, signposting).
 - /custom: Custom topic / grammar point (e.g., "used to", "present perfect", "ordering coffee"). Stay strictly on that topic — see TOPIC ADHERENCE. English only unless the topic itself is translation.
 - /translate: Vietnamese → English helper. Respond in Vietnamese (explanations, nuances), English only for the translations/quotes. Keep it short.
+- /shadow: Shadowing drill. Say ONE clear sentence (≤15 words, in quotes), wait for the student to repeat it, then give [Correction] if needed + next sentence. Keep pace slow, no extra questions.
 `;
+
+export const DIFFICULTY_PROMPT: Record<string, string> = {
+  beginner: 'Student level: BEGINNER (A1-A2). Use short simple sentences, slow pace, basic vocabulary, lots of encouragement, correct gently.',
+  intermediate: 'Student level: INTERMEDIATE (B1). Use natural professional English, introduce 1-2 new expressions per turn, correct directly but politely.',
+  advanced: 'Student level: ADVANCED (B2-C1). Use rich native-like English, idioms, nuanced feedback, challenge with follow-ups, be concise.',
+};
+
+export const PERSONA_PROMPT: Record<string, string> = {
+  encouraging: 'Tone: warm, encouraging, celebrate small wins, never harsh.',
+  strict: 'Tone: strict coach, direct, push for precision, point out every repeated mistake.',
+  professional: 'Tone: professional mentor, concise, agenda-driven, business-like.',
+};
 
 export const MODE_INFO = {
   daily: { title: 'Daily Conversation', icon: '🏠', prompt: 'How has your day been? Let\'s chat casually.' },
@@ -100,4 +113,5 @@ export const MODE_INFO = {
   presentation: { title: 'Presentation Skills', icon: '📊', prompt: 'It\'s time for your tech demo. Please start presenting your project.' },
   custom: { title: 'Custom Topic', icon: '🎯', prompt: 'What specific topic or structure would you like to focus on today?' },
   translate: { title: 'VN to EN Helper', icon: '🇻🇳', prompt: 'Hãy nói bằng tiếng Việt những gì bạn muốn diễn đạt, mình sẽ gợi ý cách nói tiếng Anh tự nhiên nhất.' },
+  shadow: { title: 'Shadowing', icon: '🗣️', prompt: 'Listen and repeat exactly. I will say one clear sentence, you shadow it back, then I correct your version.' },
 };

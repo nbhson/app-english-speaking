@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Search } from 'lucide-react';
 import type { SessionAssessment } from '../types';
 import { deriveInsight } from '../utils/assessment';
+import { avgSkill, cefrFromAvg } from '../utils/speechMetrics';
 
 export const SessionStat: React.FC<{
   icon: string;
@@ -10,12 +11,12 @@ export const SessionStat: React.FC<{
   value: string | number;
   unit?: string;
 }> = ({ icon, label, value, unit = '' }) => (
-  <div className="flex flex-col items-center justify-center p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
-    <span className="text-xl mb-1" aria-hidden>
+  <div className="flex flex-col items-center justify-center p-2 sm:p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 min-w-0">
+    <span className="text-lg sm:text-xl mb-1" aria-hidden>
       {icon}
     </span>
-    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</span>
-    <span className="text-sm font-bold text-slate-900 dark:text-white">
+    <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 truncate">{label}</span>
+    <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
       {value}
       {unit}
     </span>
@@ -25,9 +26,9 @@ export const SessionStat: React.FC<{
 export const AssessmentBar: React.FC<{ label: string; value: number }> = ({ label, value }) => {
   const percentage = (value / 5) * 100;
   return (
-    <div className="flex items-center gap-4">
-      <div className="w-36 md:w-48 text-right shrink-0">
-        <span className="text-[11px] font-bold text-[#2D8A82] dark:text-[#4ade80] uppercase tracking-wider">
+    <div className="flex items-center gap-2 sm:gap-4">
+      <div className="w-24 sm:w-36 md:w-48 text-right shrink-0">
+        <span className="text-[10px] sm:text-[11px] font-bold text-[#2D8A82] dark:text-[#4ade80] uppercase tracking-wider leading-tight block">
           {label}
         </span>
       </div>
@@ -64,18 +65,31 @@ interface AssessmentPanelProps {
   assessment: SessionAssessment;
   hasData: boolean;
   duration: number;
+  avgWpm?: number;
+  fillerTotal?: number;
+  turns?: number;
+  streak?: number;
+  xp?: number;
 }
 
-export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, hasData, duration }) => (
-  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm flex flex-col h-full transition-colors">
-    <h3 className="text-lg font-bold mb-6 md:mb-8 flex items-center gap-2 text-slate-800 dark:text-white">
+export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, hasData, duration, avgWpm = 0, fillerTotal = 0, turns = 0, streak = 0, xp = 0 }) => {
+  const avg = avgSkill(assessment);
+  const cefr = hasData ? cefrFromAvg(avg) : '—';
+  return (
+  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 shadow-sm flex flex-col h-full transition-colors">
+    <h3 className="text-base sm:text-lg font-bold mb-3 sm:mb-4 flex items-center gap-2 text-slate-800 dark:text-white">
       <span className="text-[#2D8A82]" aria-hidden>
         📊
       </span>{' '}
       Session Statistics
+      {hasData && (
+        <span className="ml-auto text-[11px] font-bold px-2 py-1 rounded-full bg-blue-600 text-white" title={`Avg score ${avg.toFixed(1)}/5`}>
+          {cefr}
+        </span>
+      )}
     </h3>
 
-    <div className="grid grid-cols-3 gap-3 mb-8">
+    <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4">
       <SessionStat
         icon="⏱️"
         label="Duration"
@@ -85,14 +99,28 @@ export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, ha
       <SessionStat icon="💪" label="Confidence" value={assessment.confidenceLevel} unit="%" />
     </div>
 
-    <h3 className="text-lg font-bold mb-6 md:mb-8 flex items-center gap-2 text-slate-800 dark:text-white">
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6 sm:mb-8 text-center">
+      {[
+        { l: 'WPM', v: avgWpm > 0 ? `${avgWpm}` : '—', t: 'Speaking pace (words/min)' },
+        { l: 'Fillers', v: `${fillerTotal}`, t: 'um/uh/like count' },
+        { l: 'Turns', v: `${turns}`, t: 'Your spoken turns' },
+        { l: `🔥 ${streak}`, v: `${xp}XP`, t: 'Streak + total XP' },
+      ].map((s) => (
+        <div key={s.l} title={s.t} className="bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-xl py-2 px-1">
+          <div className="text-[10px] font-bold text-slate-400 uppercase">{s.l}</div>
+          <div className="text-sm font-bold text-slate-800 dark:text-white">{s.v}</div>
+        </div>
+      ))}
+    </div>
+
+    <h3 className="text-base sm:text-lg font-bold mb-4 sm:mb-6 md:mb-8 flex items-center gap-2 text-slate-800 dark:text-white">
       <span className="text-blue-600" aria-hidden>
         🎯
       </span>{' '}
       Comprehensive Assessment
     </h3>
 
-    <div className="space-y-4 flex-1">
+    <div className="space-y-3 sm:space-y-4 flex-1">
       {!hasData ? (
         <div className="h-full flex flex-col items-center justify-center text-center px-4">
           <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 border border-slate-100 dark:border-slate-700">
@@ -132,4 +160,5 @@ export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, ha
       </div>
     </div>
   </div>
-);
+  );
+};

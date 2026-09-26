@@ -1,5 +1,5 @@
-import React from 'react';
-import { Volume2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Volume2, Copy, Check } from 'lucide-react';
 import { useAIConfig } from '../context/AIConfigContext';
 import { speakWordFireAndForget } from '../utils/tts';
 
@@ -9,6 +9,7 @@ interface Props {
 
 export const CorrectionCard: React.FC<Props> = ({ content }) => {
   const config = useAIConfig();
+  const [copied, setCopied] = useState(false);
   const lines = content.split('\n');
   const original = lines.find((l) => l.startsWith('Original:'))?.replace('Original:', '').trim();
   const corrected = lines.find((l) => l.startsWith('Corrected:'))?.replace('Corrected:', '').trim();
@@ -19,10 +20,27 @@ export const CorrectionCard: React.FC<Props> = ({ content }) => {
     <div className="my-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-500">
       <div className="bg-slate-50 dark:bg-slate-900/50 px-4 py-2 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
         <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
-          Correction & Improvement
+          Correction & Improvement · auto-saved
         </span>
-        <span className="text-xs" aria-hidden>
-          ✨
+        <span className="flex items-center gap-1">
+          <button
+            onClick={() => {
+              const text = alternative || corrected || '';
+              if (text) {
+                navigator.clipboard?.writeText(text).catch(() => {});
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1200);
+              }
+            }}
+            className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-400 transition-colors"
+            aria-label="Copy natural phrasing"
+            title="Copy"
+          >
+            {copied ? <Check size={13} className="text-green-600" /> : <Copy size={13} />}
+          </button>
+          <span className="text-xs" aria-hidden>
+            ✨
+          </span>
         </span>
       </div>
       <div className="p-4 space-y-4">

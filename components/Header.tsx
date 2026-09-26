@@ -1,5 +1,5 @@
 import React from 'react';
-import { Moon, Sun, PanelLeft, PanelRight, Settings } from 'lucide-react';
+import { Moon, Sun, PanelLeft, PanelRight, Settings, Library } from 'lucide-react';
 
 interface Props {
   isDarkMode: boolean;
@@ -9,6 +9,7 @@ interface Props {
   showAssessment: boolean;
   toggleAssessment: () => void;
   onOpenSettings: () => void;
+  onOpenLibrary?: () => void;
 }
 
 export const Header: React.FC<Props> = ({
@@ -19,31 +20,40 @@ export const Header: React.FC<Props> = ({
   showAssessment,
   toggleAssessment,
   onOpenSettings,
+  onOpenLibrary,
 }) => (
-  <header className="h-16 border-b bg-white dark:bg-slate-900 dark:border-slate-800 flex items-center justify-between px-4 md:px-6 sticky top-0 z-20 transition-colors">
-    <div className="flex items-center space-x-2 md:space-x-4">
+  <header className="h-14 sm:h-16 shrink-0 border-b bg-white dark:bg-slate-900 dark:border-slate-800 flex items-center justify-between gap-2 px-2 sm:px-4 md:px-6 sticky top-0 z-20 transition-colors">
+    <div className="flex items-center gap-1.5 sm:gap-2 md:space-x-4 min-w-0">
       <button
         onClick={toggleSidebar}
-        className={`p-2 rounded-xl transition-all ${showSidebar ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}
+        className={`p-2.5 sm:p-2 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 flex items-center justify-center rounded-xl transition-all ${showSidebar ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}
         aria-label={showSidebar ? 'Hide Practice Modes' : 'Show Practice Modes'}
         aria-pressed={showSidebar}
         title={showSidebar ? 'Hide Practice Modes' : 'Show Practice Modes'}
       >
         <PanelLeft size={20} />
       </button>
-      <div className="flex items-center space-x-2">
-        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+        <div className="w-8 h-8 shrink-0 bg-blue-600 rounded-lg flex items-center justify-center">
           <span className="text-white font-bold" aria-hidden>
             F
           </span>
         </div>
-        <h1 className="text-lg md:text-xl font-bold text-slate-800 dark:text-white">FluentDev</h1>
+        <h1 className="text-base sm:text-lg md:text-xl font-bold text-slate-800 dark:text-white truncate">FluentDev</h1>
       </div>
     </div>
-    <div className="flex items-center space-x-2 md:space-x-4">
+    <div className="flex items-center gap-1.5 sm:gap-2 md:space-x-4 shrink-0">
+      <button
+        onClick={onOpenLibrary}
+        className="flex items-center justify-center gap-1.5 p-2.5 sm:p-2 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+        aria-label="Open learning library"
+        title="My Library (history, mistakes, vocab)"
+      >
+        <Library size={18} />
+      </button>
       <button
         onClick={onOpenSettings}
-        className="flex items-center gap-1.5 p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+        className="flex items-center justify-center gap-1.5 p-2.5 sm:p-2 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
         aria-label="Open AI Connection Settings"
         title="AI Connection Settings"
       >
@@ -60,7 +70,7 @@ export const Header: React.FC<Props> = ({
       </button>
       <button
         onClick={toggleDarkMode}
-        className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+        className="p-2.5 sm:p-2 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
         aria-label={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
         title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
       >

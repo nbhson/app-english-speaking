@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppMode, TranscriptionEntry, SessionState, SpeechRecognition } from './types';
-import { SYSTEM_INSTRUCTION, MODE_INFO } from './constants';
+import { SYSTEM_INSTRUCTION, MODE_INFO, DIFFICULTY_PROMPT, PERSONA_PROMPT } from './constants';
 import {
   AIConfig,
   ChatMessage,
@@ -11,6 +11,7 @@ import {
   speech,
 } from './utils/api';
 import { SettingsModal } from './components/SettingsModal';
+import { LibraryPanel } from './components/LibraryPanel';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { SelectionTranslator } from './components/SelectionTranslator';
@@ -19,7 +20,14 @@ import { CorrectionCard } from './components/CorrectionCard';
 import { AssessmentPanel } from './components/AssessmentPanel';
 import { AIConfigProvider } from './context/AIConfigContext';
 import { INITIAL_ASSESSMENT, parseAssessmentBlock } from './utils/assessment';
-import { Languages, Sparkles, Mic, X, ChevronRight, Loader2 } from 'lucide-react';
+import { analyzeSpeech, avgSkill, xpForSession } from './utils/speechMetrics';
+import { isBrowserSTTSupported } from './utils/browser';
+import { pickVoiceByURI } from './utils/browser';
+import {
+  saveSession, addMistake, parseCorrectionBlock, logSessionProgress,
+  getStreak, totalXP, transcriptToMarkdown, downloadText,
+} from './utils/storage';
+import { Languages, Sparkles, Mic, X, ChevronRight, Loader2, Square, RotateCcw, Copy, Download, TriangleAlert } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -64,7 +72,9 @@ const App: React.FC = () => {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
-  const [showAssessment, setShowAssessment] = useState(true);
+  const [showAssessment, setShowAssessment] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true,
+  );
   const [inputText, setInputText] = useState('');
   const [customTopic, setCustomTopic] = useState('');
   const [autoListen, setAutoListen] = useState(() => {
@@ -75,6 +85,15 @@ const App: React.FC = () => {
   });
   const [isListening, setIsListening] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [browserSTT] = useState(() => isBrowserSTTSupported());
+  // speech metrics + gamification
+  const [avgWpm, setAvgWpm] = useState(0);
+  const [fillerTotal, setFillerTotal] = useState(0);
+  const [userTurns, setUserTurns] = useState(0);
+  const [streak, setStreak] = useState(() => getStreak());
+  const [xp, setXp] = useState(() => totalXP());
+  const [copiedAll, setCopiedAll] = useState(false);
 
   // Refs that async callbacks read to avoid stale closures.
   const configRef = useRef(config);
@@ -94,6 +113,9 @@ const App: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const lastCoachTextRef = useRef('');
+  const turnStartRef = useRef<number>(Date.now());
+  const wpmSamplesRef = useRef<number[]>([]);
 
   useEffect(() => {
     configRef.current = config;
@@ -169,16 +191,40 @@ const App: React.FC = () => {
       !processingRef.current &&
       !speakingRef.current
     ) {
+      turnStartRef.current = Date.now();
       startRecognition();
     }
   };
 
-  const systemPrompt = (mode: AppMode) =>
-    SYSTEM_INSTRUCTION +
-    `\n\nCURRENT MODE: ${mode}` +
-    (mode === AppMode.CUSTOM && customTopicRef.current.trim()
-      ? `\nTOPIC TO FOCUS ON (STRICT - DO NOT DIGRESS): ${customTopicRef.current.trim()}\nYou MUST constrain all questions, examples, and corrections to this exact topic/structure. If the user wrote "chỉ", "only", "just", treat it as a hard boundary and do not introduce any other topic.`
-      : '');
+  const systemPrompt = (mode: AppMode) => {
+    const cfg = configRef.current;
+    if (cfg.systemPromptOverride?.trim()) return cfg.systemPromptOverride;
+    const extra = `\n\nSTUDENT LEVEL: ${DIFFICULTY_PROMPT[cfg.difficulty ?? 'intermediate']}\nCOACH TONE: ${PERSONA_PROMPT[cfg.persona ?? 'encouraging']}`;
+    return (
+      SYSTEM_INSTRUCTION +
+      extra +
+      `\n\nCURRENT MODE: ${mode}` +
+      (mode === AppMode.CUSTOM && customTopicRef.current.trim()
+        ? `\nTOPIC TO FOCUS ON (STRICT - DO NOT DIGRESS): ${customTopicRef.current.trim()}\nYou MUST constrain all questions, examples, and corrections to this exact topic/structure. If the user wrote "chỉ", "only", "just", treat it as a hard boundary and do not introduce any other topic.`
+        : '')
+    );
+  };
+
+  const stopSpeaking = () => {
+    // barge-in: interrupt coach immediately
+    if (currentAudioRef.current) {
+      try { currentAudioRef.current.pause(); } catch { /* ignore */ }
+      currentAudioRef.current = null;
+    }
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    setIsSpeaking(false);
+    speakingRef.current = false;
+    resumeListening();
+  };
+
+  const replayLast = () => {
+    if (lastCoachTextRef.current) void speakText(lastCoachTextRef.current);
+  };
 
   const speakText = async (text: string) => {
     const clean = text
@@ -187,6 +233,7 @@ const App: React.FC = () => {
       .replace(/\[Insight\][\s\S]*?\[\/Insight\]/g, '')
       .trim();
     if (!clean) return;
+    lastCoachTextRef.current = clean;
 
     if (configRef.current.ttsEngine === 'custom') {
       setIsSpeaking(true);
@@ -228,8 +275,10 @@ const App: React.FC = () => {
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(clean);
       u.lang = 'en-US';
-      u.rate = 1;
-      u.pitch = 1;
+      u.rate = configRef.current.ttsRate ?? 1;
+      u.pitch = configRef.current.ttsPitch ?? 1;
+      const v = pickVoiceByURI(configRef.current.ttsVoiceURI);
+      if (v) u.voice = v;
       u.onstart = () => {
         setIsSpeaking(true);
         speakingRef.current = true;
@@ -262,6 +311,17 @@ const App: React.FC = () => {
   };
 
   const finalizeModelTurn = (modelId: string, full: string) => {
+    // auto-save every [Correction] block into mistake notebook
+    const correctionBlocks = full.match(/\[Correction\]([\s\S]*?)\[\/Correction\]/g);
+    if (correctionBlocks) {
+      for (const block of correctionBlocks) {
+        const inner = block.replace(/\[Correction\]|\[\/Correction\]/g, '');
+        const parsed = parseCorrectionBlock(inner);
+        if (parsed) {
+          try { addMistake({ ...parsed, mode: modeRef.current }); } catch { /* ignore */ }
+        }
+      }
+    }
     let suggestion: string | undefined;
     const correctionMatch = full.match(/Alternative:\s*(.*)(?:\n|\[\/Correction\]|$)/i);
     if (correctionMatch) {
@@ -314,7 +374,17 @@ const App: React.FC = () => {
     setIsProcessing(true);
     stopRecognition();
 
-    setTranscriptions((prev) => [...prev, { id: uid(), role: 'user', text, timestamp: Date.now() }]);
+    // real speech metrics for this user turn
+    const elapsed = Math.max(1, (Date.now() - turnStartRef.current) / 1000);
+    const m = analyzeSpeech(text, Math.min(elapsed, 120));
+    wpmSamplesRef.current = [...wpmSamplesRef.current.slice(-19), m.wpm].filter((v) => v > 0);
+    const avg = wpmSamplesRef.current.length ? Math.round(wpmSamplesRef.current.reduce((a, b) => a + b, 0) / wpmSamplesRef.current.length) : m.wpm;
+    setAvgWpm(avg);
+    setFillerTotal((v) => v + m.fillerCount);
+    setUserTurns((v) => v + 1);
+    turnStartRef.current = Date.now();
+
+    setTranscriptions((prev) => [...prev, { id: uid(), role: 'user', text, timestamp: Date.now(), wpm: m.wpm, fillerCount: m.fillerCount }]);
 
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt(modeRef.current) },
@@ -410,7 +480,32 @@ const App: React.FC = () => {
     }
   };
 
-  const stopSession = () => {
+  const persistSession = (endedTranscriptions?: TranscriptionEntry[]) => {
+    try {
+      const list = endedTranscriptions ?? transcriptionsRef.current;
+      if (list.length < 2) return;
+      const startedAt = session.startTime ?? Date.now();
+      const endedAt = Date.now();
+      const durationSec = Math.max(1, Math.round((endedAt - startedAt) / 1000));
+      const corrections = list.filter((t) => t.text.includes('[Correction]')).length;
+      const avg = avgSkill(assessment);
+      const xpGain = xpForSession(durationSec, userTurns, corrections);
+      saveSession({
+        id: uid(), mode: modeRef.current, startedAt, endedAt, durationSec,
+        turns: userTurns, corrections, avgScore: avg,
+        vocabPoints: assessment.vocabularyPoints, confidence: assessment.confidenceLevel,
+        transcript: list,
+      });
+      const { streak: s } = logSessionProgress(durationSec, xpGain);
+      setStreak(s);
+      setXp(totalXP());
+    } catch (e) {
+      console.error('persist session failed', e);
+    }
+  };
+
+  const stopSession = (save = true) => {
+    if (save && activeRef.current) persistSession();
     stopRecognition();
     if (abortRef.current) {
       abortRef.current.abort();
@@ -494,20 +589,37 @@ const App: React.FC = () => {
   };
 
   const startSession = async (mode: AppMode) => {
-    if (activeRef.current) stopSession();
+    if (activeRef.current) stopSession(false);
     setIsConnecting(true);
     setStartError(null);
     setTranscriptions([]);
     setAssessment({ ...INITIAL_ASSESSMENT });
     setHasAssessmentData(false);
     setDuration(0);
+    setAvgWpm(0);
+    setFillerTotal(0);
+    setUserTurns(0);
+    wpmSamplesRef.current = [];
+    turnStartRef.current = Date.now();
+    lastCoachTextRef.current = '';
+
+    // Safari/Firefox: no Web Speech -> auto-suggest custom STT instead of hard fail
+    if (mode !== AppMode.TRANSLATE && configRef.current.sttEngine === 'browser' && !isBrowserSTTSupported()) {
+      setStartError('Trình duyệt này không hỗ trợ Web Speech (Safari iOS / Firefox). Hãy chuyển STT sang Custom Provider trong Settings để dùng Hold-to-Speak, hoặc gõ text bên dưới.');
+    }
 
     try {
-      if (mode !== AppMode.TRANSLATE) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        });
-        streamRef.current = stream;
+      if (mode !== AppMode.TRANSLATE && !(configRef.current.sttEngine === 'browser' && !isBrowserSTTSupported())) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          });
+          streamRef.current = stream;
+        } catch (micErr) {
+          // Translate + text fallback still works without mic (mode already narrowed to non-translate here)
+          console.warn('Mic unavailable, continuing with text input', micErr);
+          setStartError('Không lấy được micro — bạn vẫn có thể gõ text để học. Kiểm tra quyền micro nếu muốn nói.');
+        }
       }
       setSession({ isActive: true, mode, startTime: Date.now() });
       activeRef.current = true;
@@ -589,7 +701,7 @@ const App: React.FC = () => {
 
     processingRef.current = false;
     setIsProcessing(false);
-    setTimeout(() => stopSession(), 1200);
+    setTimeout(() => stopSession(true), 1500);
   };
 
   const renderMessageText = (text: string) => {
@@ -639,7 +751,7 @@ const App: React.FC = () => {
   return (
     <AIConfigProvider config={config}>
       <div
-        className={`flex flex-col h-screen overflow-hidden transition-colors ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} selection:bg-blue-100 selection:text-blue-900`}
+        className={`flex flex-col h-dvh overflow-hidden transition-colors ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} selection:bg-blue-100 selection:text-blue-900`}
       >
         <Header
           isDarkMode={isDarkMode}
@@ -652,10 +764,17 @@ const App: React.FC = () => {
           showAssessment={showAssessment}
           toggleAssessment={() => setShowAssessment(!showAssessment)}
           onOpenSettings={() => setShowSettings(true)}
+          onOpenLibrary={() => setShowLibrary(true)}
         />
         <SelectionTranslator config={config} />
+        {!browserSTT && (
+          <div className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 text-amber-700 dark:text-amber-300 rounded-2xl px-4 py-2.5" role="alert">
+            <TriangleAlert size={14} className="mt-0.5 shrink-0" />
+            <span>Trình duyệt này không hỗ trợ Web Speech (Safari/Firefox). Hãy chuyển STT → Custom Provider trong Settings để dùng nút Hold-to-Speak, hoặc gõ text phía dưới — app vẫn học bình thường.</span>
+          </div>
+        )}
 
-        <main className="flex-1 flex flex-col md:flex-row max-w-[1600px] mx-auto w-full p-4 md:p-6 gap-6 h-[calc(100vh-64px)] overflow-hidden relative">
+        <main className="flex-1 flex flex-col md:flex-row max-w-[1600px] mx-auto w-full p-2 sm:p-4 md:p-6 gap-3 md:gap-6 h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)] min-h-0 overflow-hidden relative">
           {/* Desktop Sidebar */}
           <AnimatePresence>
             {showSidebar && (
@@ -689,9 +808,19 @@ const App: React.FC = () => {
                   initial={{ x: -300, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: -300, opacity: 0 }}
-                  className="fixed left-0 top-16 bottom-0 w-[300px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 z-40 md:hidden p-4 overflow-y-auto"
+                  className="fixed left-0 top-14 sm:top-16 bottom-0 w-[85vw] max-w-[300px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 z-40 md:hidden p-4 pb-[env(safe-area-inset-bottom)] overflow-y-auto"
                   aria-label="Mobile practice modes"
                 >
+                  <div className="flex items-center justify-between mb-2 md:hidden">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Practice Modes</span>
+                    <button
+                      onClick={() => setIsMobileSidebarOpen(false)}
+                      className="p-2 -m-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      aria-label="Close menu"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
                   <Sidebar activeMode={session.mode} onChangeMode={changeMode} />
                 </motion.nav>
               </>
@@ -699,10 +828,10 @@ const App: React.FC = () => {
           </AnimatePresence>
 
           {/* Chat / Interaction Area */}
-          <section className="flex-1 flex flex-col bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors min-w-0">
-            <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 space-y-6 scroll-smooth">
+          <section className="flex-1 flex flex-col min-h-0 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors min-w-0">
+            <div ref={scrollRef} className={`flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6 scroll-smooth ${showAssessment ? 'pb-40 lg:pb-6' : ''}`}>
               {!session.isActive && !isConnecting && (
-                <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto">
+                <div className="min-h-full flex flex-col items-center justify-center text-center max-w-md mx-auto py-8 px-2">
                   <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-6">
                     <span className="text-4xl" aria-hidden>
                       {session.mode === AppMode.TRANSLATE ? '⌨️' : '🎙️'}
@@ -763,7 +892,7 @@ const App: React.FC = () => {
               {transcriptions.map((t) => (
                 <div key={t.id} className={`flex flex-col ${t.role === 'user' ? 'items-end' : 'items-start'} space-y-2`}>
                   <div
-                    className={`max-w-[85%] md:max-w-[70%] p-4 rounded-2xl relative group/msg ${
+                    className={`max-w-[92%] sm:max-w-[85%] md:max-w-[70%] p-3 sm:p-4 rounded-2xl relative group/msg ${
                       t.role === 'user'
                         ? 'bg-blue-600 text-white rounded-tr-none'
                         : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none shadow-sm'
@@ -813,6 +942,11 @@ const App: React.FC = () => {
                         {t.translation}
                       </motion.div>
                     )}
+                    {t.role === 'user' && (t.wpm || t.fillerCount) && (
+                      <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                        {t.wpm ? `${t.wpm} WPM` : ''}{t.wpm && t.fillerCount ? ' · ' : ''}{t.fillerCount ? `${t.fillerCount} filler${t.fillerCount > 1 ? 's' : ''}` : ''}
+                      </div>
+                    )}
                   </div>
 
                   {t.role === 'user' && t.suggestion && (
@@ -833,14 +967,16 @@ const App: React.FC = () => {
             </div>
 
             {/* Persistent Control Bar */}
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/50 border-t dark:border-slate-800 flex flex-col gap-4 transition-colors">
-              {session.isActive && session.mode === AppMode.TRANSLATE && (
-                <div className="flex items-center gap-2 bg-white dark:bg-slate-800 p-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                  <label htmlFor="translate-input" className="sr-only">
-                    Vietnamese input
+            <div className="p-2 sm:p-4 pb-[env(safe-area-inset-bottom)] bg-slate-50 dark:bg-slate-900/50 border-t dark:border-slate-800 flex flex-col gap-2 sm:gap-3 transition-colors shrink-0">
+              {/* Universal text input — works in every mode (mic fallback) */}
+              {session.isActive && (
+                <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 bg-white dark:bg-slate-800 p-1.5 sm:p-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <label htmlFor="chat-input" className="sr-only">
+                    Type your message
                   </label>
                   <input
-                    id="translate-input"
+                    id="chat-input"
                     type="text"
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
@@ -850,31 +986,76 @@ const App: React.FC = () => {
                         sendTextMessage(inputText);
                       }
                     }}
-                    placeholder="Nhập câu tiếng Việt bạn muốn dịch..."
-                    className="flex-1 bg-transparent border-none focus:ring-0 text-sm px-2 dark:text-white outline-none"
+                    placeholder={session.mode === AppMode.TRANSLATE ? 'Nhập câu tiếng Việt bạn muốn dịch...' : session.mode === AppMode.SHADOW ? '…or type the sentence you just heard to check…' : '…or type here if mic fails — Enter to send'}
+                    className="flex-1 min-w-0 bg-transparent border-none focus:ring-0 text-[16px] sm:text-sm px-2 dark:text-white outline-none"
                   />
                   <button
                     onClick={() => sendTextMessage(inputText)}
                     disabled={!inputText.trim()}
-                    className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="p-2.5 sm:p-2 shrink-0 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     aria-label="Send message"
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={stopSession}
-                    className="p-2 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/40 hover:text-red-500 transition-colors"
-                    title="Stop Session"
+                    onClick={() => stopSession(true)}
+                    className="p-2.5 sm:p-2 shrink-0 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/40 hover:text-red-500 transition-colors"
+                    title="Stop Session (auto-saves)"
                     aria-label="Stop session"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 pl-1">Audio</span>
+                  {isSpeaking ? (
+                    <button
+                      onClick={stopSpeaking}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 shrink-0 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-xl text-xs font-bold hover:bg-amber-200 transition-colors"
+                      title="Interrupt coach (stop speaking)"
+                      aria-label="Interrupt coach"
+                    >
+                      <Square className="w-3.5 h-3.5" /> Stop
+                    </button>
+                  ) : (
+                    <button
+                      onClick={replayLast}
+                      disabled={!lastCoachTextRef.current}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-100 transition-colors disabled:opacity-40"
+                      title="Replay last coach reply"
+                      aria-label="Replay last reply"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Replay
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      const md = transcriptToMarkdown(transcriptionsRef.current, modeRef.current);
+                      navigator.clipboard?.writeText(md).catch(() => {});
+                      setCopiedAll(true);
+                      setTimeout(() => setCopiedAll(false), 1200);
+                    }}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-100 transition-colors"
+                    title="Copy transcript"
+                    aria-label="Copy transcript"
+                  >
+                    {copiedAll ? <Sparkles className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />} {copiedAll ? 'Copied' : 'Copy'}
+                  </button>
+                  <button
+                    onClick={() => downloadText(`fluentdev-${modeRef.current}-${Date.now()}.md`, transcriptToMarkdown(transcriptionsRef.current, modeRef.current))}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-100 transition-colors"
+                    title="Download transcript (.md)"
+                    aria-label="Download transcript"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Save
+                  </button>
+                </div>
+                </div>
               )}
 
               {session.mode !== AppMode.TRANSLATE && (
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div className="flex items-center space-x-3 md:space-x-4 flex-wrap gap-y-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                  <div className="flex items-center gap-2 sm:gap-3 sm:space-x-4 flex-wrap gap-y-2 min-w-0">
                     <div className="relative flex items-center justify-center">
                       <div className={`w-4 h-4 rounded-full ${session.isActive ? 'bg-green-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-700'}`}></div>
                       {session.isActive && <div className="absolute w-8 h-8 bg-green-500/20 rounded-full animate-ping"></div>}
@@ -924,9 +1105,9 @@ const App: React.FC = () => {
                     )}
                   </div>
 
-                  <div className="flex items-center space-x-2 md:space-x-4 flex-wrap gap-y-2">
+                  <div className="flex items-center gap-2 flex-wrap gap-y-2">
                     {session.isActive && config.sttEngine === 'browser' && isListening && !isProcessing && !isSpeaking && (
-                      <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl">
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl">
                         <div className="flex gap-0.5" aria-hidden>
                           {[1, 2, 3, 4].map((i) => (
                             <div key={i} className="w-1 h-3 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: `${i * 0.1}s` }}></div>
@@ -939,7 +1120,7 @@ const App: React.FC = () => {
                     {session.isActive && config.sttEngine === 'browser' && !autoListen && !isListening && !isProcessing && !isSpeaking && (
                       <button
                         onClick={() => startRecognition()}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-all animate-in fade-in"
+                        className="flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 rounded-xl font-bold text-sm bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-all animate-in fade-in"
                         aria-label="Continue listening"
                       >
                         <Mic size={16} />
@@ -957,7 +1138,7 @@ const App: React.FC = () => {
                           startRecording();
                         }}
                         onTouchEnd={stopRecording}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all border ${
+                        className={`flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 rounded-xl font-bold text-sm transition-all border touch-none select-none ${
                           isRecording
                             ? 'bg-red-500 text-white border-red-500 shadow-red-200 shadow-md'
                             : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
@@ -973,7 +1154,7 @@ const App: React.FC = () => {
                     {session.isActive ? (
                       <button
                         onClick={() => void finishAndAssess()}
-                        className="bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-xl font-bold text-sm transition-all shadow-md flex items-center gap-2"
+                        className="w-full sm:w-auto justify-center bg-blue-600 text-white hover:bg-blue-700 px-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 rounded-xl font-bold text-sm transition-all shadow-md flex items-center gap-2"
                       >
                         <span aria-hidden>🏁</span>
                         Finish & Assess
@@ -981,7 +1162,7 @@ const App: React.FC = () => {
                     ) : (
                       <button
                         onClick={() => void startSession(session.mode)}
-                        className="w-14 h-14 flex items-center justify-center rounded-full transition-all group relative bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 shadow-xl"
+                        className="w-14 h-14 flex items-center justify-center rounded-full transition-all group relative bg-blue-600 hover:bg-blue-700 active:scale-95 text-white shadow-blue-200 shadow-xl shrink-0"
                         aria-label="Start speaking session"
                       >
                         <svg
@@ -1021,29 +1202,57 @@ const App: React.FC = () => {
                 aria-label="Assessment panel"
               >
                 <div className="w-[420px] h-full overflow-y-auto pr-1">
-                  <AssessmentPanel assessment={assessment} hasData={hasAssessmentData} duration={duration} />
+                  <AssessmentPanel assessment={assessment} hasData={hasAssessmentData} duration={duration} avgWpm={avgWpm} fillerTotal={fillerTotal} turns={userTurns} streak={streak} xp={xp} />
                 </div>
               </motion.aside>
             )}
           </AnimatePresence>
         </main>
 
-        {/* Mobile Assessment Drawer */}
+        {/* Mobile Assessment Drawer — collapsible bottom sheet */}
         <AnimatePresence>
           {showAssessment && (
             <motion.div
               initial={{ y: 300, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 300, opacity: 0 }}
-              className="lg:hidden fixed bottom-0 left-0 right-0 max-h-[60vh] overflow-y-auto bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-t-3xl shadow-2xl z-20 p-4"
+              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              className="lg:hidden fixed bottom-0 left-0 right-0 max-h-[55dvh] overflow-y-auto overscroll-contain bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-t-3xl shadow-2xl z-20 px-3 pt-2 pb-[env(safe-area-inset-bottom)]"
               aria-label="Mobile assessment"
             >
-              <AssessmentPanel assessment={assessment} hasData={hasAssessmentData} duration={duration} />
+              <div className="sticky top-0 bg-white dark:bg-slate-900 pt-1 pb-2 z-10">
+                <div className="mx-auto w-10 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 mb-1" aria-hidden />
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">📊 Assessment</span>
+                  <button
+                    onClick={() => setShowAssessment(false)}
+                    className="p-2 -m-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                    aria-label="Hide assessment"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+              <div className="px-1 pb-4">
+                <AssessmentPanel assessment={assessment} hasData={hasAssessmentData} duration={duration} avgWpm={avgWpm} fillerTotal={fillerTotal} turns={userTurns} streak={streak} xp={xp} />
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
 
+        {/* Floating stats button on mobile when sheet hidden */}
+        {!showAssessment && (
+          <button
+            onClick={() => setShowAssessment(true)}
+            className="lg:hidden fixed bottom-24 right-3 z-20 flex items-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold shadow-xl active:scale-95 transition-transform"
+            aria-label="Show assessment"
+          >
+            📊 Stats
+          </button>
+        )}
+
         {showSettings && <SettingsModal initial={config} onClose={() => setShowSettings(false)} onSaved={(cfg) => setConfig(cfg)} />}
+        {showLibrary && <LibraryPanel config={config} onClose={() => { setShowLibrary(false); setStreak(getStreak()); setXp(totalXP()); }} />}
       </div>
     </AIConfigProvider>
   );
