@@ -16,7 +16,7 @@ import { LibraryPanel } from './components/LibraryPanel';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { SelectionTranslator } from './components/SelectionTranslator';
-import { HoverableWord } from './components/HoverableWord';
+import { MessageMarkdown } from './components/MessageMarkdown';
 import { CorrectionCard } from './components/CorrectionCard';
 import { AssessmentPanel } from './components/AssessmentPanel';
 import { AIConfigProvider } from './context/AIConfigContext';
@@ -731,7 +731,7 @@ const App: React.FC = () => {
     setTimeout(() => stopSession(true), 1500);
   };
 
-  const renderMessageText = (text: string) => {
+  const renderMessageText = (text: string, tone: 'coach' | 'user' = 'coach') => {
     const correctionRegex = /\[Correction\]([\s\S]*?)\[\/Correction\]/g;
     const assessmentRegex = /\[Assessment\]([\s\S]*?)\[\/Assessment\]/g;
     const insightRegex = /\[Insight\]([\s\S]*?)\[\/Insight\]/g;
@@ -756,22 +756,8 @@ const App: React.FC = () => {
 
     return parts.map((part, partIdx) => {
       if (typeof part !== 'string') return part;
-
-      const words = part.split(/(\s+)/);
-      return words.map((word, idx) => {
-        if (word.trim().length === 0) return <span key={`${partIdx}-${idx}`}>{word}</span>;
-        const wordMatch = word.match(/^([\w']+)(.*)$/);
-        if (wordMatch) {
-          const [, mainWord, punctuation] = wordMatch;
-          return (
-            <React.Fragment key={`${partIdx}-${idx}`}>
-              <HoverableWord word={mainWord} config={config} />
-              {punctuation}
-            </React.Fragment>
-          );
-        }
-        return <span key={`${partIdx}-${idx}`}>{word}</span>;
-      });
+      if (!part.trim()) return null;
+      return <MessageMarkdown key={partIdx} text={part} tone={tone} />;
     });
   };
 
@@ -1014,13 +1000,13 @@ const App: React.FC = () => {
                     {t.role === 'model' && (
                       <div className="text-[10px] font-bold uppercase tracking-wider mb-1 opacity-60">{MODE_CONFIGS[session.mode].coachRole}</div>
                     )}
-                    <div className="text-sm md:text-base leading-relaxed whitespace-pre-wrap break-words">
+                    <div className="text-sm md:text-base leading-relaxed break-words">
                       {t.text === '' && t.role === 'model' ? (
                         <span className="inline-flex items-center gap-2 text-slate-400">
                           <Loader2 size={14} className="animate-spin" /> thinking...
                         </span>
                       ) : (
-                        renderMessageText(t.text)
+                        renderMessageText(t.text, t.role === 'user' ? 'user' : 'coach')
                       )}
                     </div>
 
@@ -1052,11 +1038,11 @@ const App: React.FC = () => {
                           <Sparkles size={10} />
                           <span>Vietnamese Translation</span>
                         </div>
-                        {t.translation}
+                        <MessageMarkdown text={t.translation} tone={t.role === 'user' ? 'user' : 'coach'} />
                       </motion.div>
                     )}
                     {t.role === 'user' && (t.wpm || t.fillerCount) && (
-                      <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                      <div className="text-[10px] font-bold text-blue-100/80">
                         {t.wpm ? `${t.wpm} WPM` : ''}{t.wpm && t.fillerCount ? ' · ' : ''}{t.fillerCount ? `${t.fillerCount} filler${t.fillerCount > 1 ? 's' : ''}` : ''}
                       </div>
                     )}
@@ -1071,7 +1057,7 @@ const App: React.FC = () => {
                           </span>
                           <span>Natural Phrasing</span>
                         </div>
-                        <p className="italic font-medium leading-relaxed">{renderMessageText(`"${t.suggestion}"`)}</p>
+                        <p className="italic font-medium leading-relaxed">“{t.suggestion}”</p>
                       </div>
                     </div>
                   )}
