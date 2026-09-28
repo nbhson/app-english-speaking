@@ -28,6 +28,7 @@ import {
   saveSession, addMistake, parseCorrectionBlock, logSessionProgress,
   getStreak, totalXP, transcriptToMarkdown, downloadText,
 } from './utils/storage';
+import { mirrorSession, mirrorMistake, mirrorProgress } from './utils/serverStore';
 import { Languages, Sparkles, Mic, X, ChevronRight, Loader2, Square, RotateCcw, Copy, Download, TriangleAlert, PanelLeft, PanelRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -332,7 +333,10 @@ const App: React.FC = () => {
         const inner = block.replace(/\[Correction\]|\[\/Correction\]/g, '');
         const parsed = parseCorrectionBlock(inner);
         if (parsed) {
-          try { addMistake({ ...parsed, mode: modeRef.current }); } catch { /* ignore */ }
+          try {
+            addMistake({ ...parsed, mode: modeRef.current });
+            mirrorMistake({ ...parsed, mode: modeRef.current });
+          } catch { /* ignore */ }
         }
       }
     }
@@ -504,15 +508,20 @@ const App: React.FC = () => {
       const corrections = list.filter((t) => t.text.includes('[Correction]')).length;
       const avg = avgSkill(assessment);
       const xpGain = xpForSession(durationSec, userTurns, corrections);
-      saveSession({
+      const rec = {
         id: uid(), mode: modeRef.current, startedAt, endedAt, durationSec,
         turns: userTurns, corrections, avgScore: avg,
         vocabPoints: assessment.vocabularyPoints, confidence: assessment.confidenceLevel,
         transcript: list,
-      });
+      };
+      saveSession(rec);
+      mirrorSession(rec);
       const { streak: s } = logSessionProgress(durationSec, xpGain);
       setStreak(s);
       setXp(totalXP());
+      void mirrorProgress(durationSec, xpGain).then((rs) => {
+        if (typeof rs === 'number') setStreak(rs);
+      });
     } catch (e) {
       console.error('persist session failed', e);
     }

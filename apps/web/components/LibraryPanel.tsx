@@ -1,13 +1,19 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Trash2, Volume2, Download, Check, RotateCcw, GraduationCap, MessageCircle } from 'lucide-react';
 import type { AIConfig } from '../utils/api';
 import type { AppMode } from '../types';
+import type { MistakeEntry, ProgressDay, SessionRecord, VocabEntry } from '../types';
 import {
   getSessions, clearSessions, transcriptToMarkdown, downloadText,
   getMistakes, markMistakeReviewed, deleteMistake,
   getVocab, deleteVocab,
   getProgress, getStreak, totalXP,
 } from '../utils/storage';
+import {
+  fetchSessions, fetchMistakes, fetchVocab, fetchProgress,
+  mirrorClearSessions, mirrorMistakeReviewed, mirrorDeleteMistake, mirrorDeleteVocab,
+  migrateLocalToServer,
+} from '../utils/serverStore';
 import { speakWordFireAndForget } from '../utils/tts';
 
 interface Props {
@@ -21,20 +27,56 @@ type Tab = 'history' | 'mistakes' | 'vocab' | 'progress';
 export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) => {
   const [tab, setTab] = useState<Tab>('history');
   const [refresh, setRefresh] = useState(0);
-  const sessions = useMemo(() => getSessions(), [refresh, tab]);
-  const mistakes = useMemo(() => getMistakes(), [refresh, tab]);
-  const vocab = useMemo(() => getVocab(), [refresh, tab]);
-  const progress = useMemo(() => getProgress(), [refresh, tab]);
+  const [sessions, setSessions] = useState<SessionRecord[]>(() => getSessions());
+  const [mistakes, setMistakes] = useState<MistakeEntry[]>(() => getMistakes());
+  const [vocab, setVocab] = useState<VocabEntry[]>(() => getVocab());
+  const [progress, setProgress] = useState<ProgressDay[]>(() => getProgress());
+  const [remote, setRemote] = useState<boolean | null>(null);
   const streak = getStreak();
   const xp = totalXP();
 
   const bump = () => setRefresh((v) => v + 1);
 
+  useEffect(() => {
+    let cancelled = false;
+    // One-time migration: push existing localStorage data into an empty server DB.
+    void migrateLocalToServer().then((migrated) => {
+      if (migrated && !cancelled) setRefresh((v) => v + 1);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [s, m, v, p] = await Promise.all([
+        fetchSessions(), fetchMistakes(), fetchVocab(), fetchProgress(),
+      ]);
+      if (cancelled) return;
+      setSessions(s.list);
+      setMistakes(m.list);
+      setVocab(v.list);
+      setProgress(p.list);
+      setRemote(s.remote || m.remote || v.remote || p.remote);
+    })();
+    return () => { cancelled = true; };
+  }, [tab, refresh]);
+
   return (
     <div className="fixed inset-0 z-[150] flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm">
       <div className="w-full sm:max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[88vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
-          <h2 className="text-lg font-bold dark:text-white">📚 My Learning Library</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold dark:text-white">📚 My Learning Library</h2>
+            {remote !== null && (
+              <span
+                title={remote ? 'Đang lưu vào SQLite (data/fluentdev.db)' : 'Server chưa chạy — đang lưu local (trình duyệt)'}
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${remote ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}
+              >
+                {remote ? '● SQLite' : '● Local'}
+              </span>
+            )}
+          </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-400" aria-label="Close library">
             <X size={18} />
           </button>
@@ -56,7 +98,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
             <>
               {sessions.length === 0 && <p className="text-sm text-slate-400">Chưa có session nào. Học xong 1 buổi sẽ tự lưu ở đây.</p>}
               <button
-                onClick={() => { if (confirm('Xóa toàn bộ lịch sử?')) { clearSessions(); bump(); } }}
+                onClick={() => { if (confirm('Xóa toàn bộ lịch sử?')) { clearSessions(); mirrorClearSessions(); bump(); } }}
                 className="text-[11px] font-bold text-slate-400 hover:text-red-500"
               >
                 Clear all history
@@ -98,13 +140,13 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                         <GraduationCap size={11} /> Luyện lại
                       </button>
                     )}
-                    <button onClick={() => { markMistakeReviewed(m.id); bump(); }} className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg" title="Đã ôn 1 lần">
+                    <button onClick={() => { markMistakeReviewed(m.id); mirrorMistakeReviewed(m.id); bump(); }} className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg" title="Đã ôn 1 lần">
                       <RotateCcw size={11} /> Reviewed ({m.reviewCount})
                     </button>
-                    <button onClick={() => { markMistakeReviewed(m.id, true); bump(); }} className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-green-50 text-green-700 rounded-lg">
+                    <button onClick={() => { markMistakeReviewed(m.id, true); mirrorMistakeReviewed(m.id, true); bump(); }} className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-green-50 text-green-700 rounded-lg">
                       <Check size={11} /> Mastered
                     </button>
-                    <button onClick={() => { deleteMistake(m.id); bump(); }} className="ml-auto p-1.5 text-slate-300 hover:text-red-500" aria-label="Delete mistake">
+                    <button onClick={() => { deleteMistake(m.id); mirrorDeleteMistake(m.id); bump(); }} className="ml-auto p-1.5 text-slate-300 hover:text-red-500" aria-label="Delete mistake">
                       <Trash2 size={13} />
                     </button>
                   </div>
@@ -133,7 +175,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                         <MessageCircle size={13} />
                       </button>
                     )}
-                    <button onClick={() => { deleteVocab(v.id); bump(); }} className="p-1.5 text-slate-300 hover:text-red-500" aria-label="Delete vocab">
+                    <button onClick={() => { deleteVocab(v.id); mirrorDeleteVocab(v.id); bump(); }} className="p-1.5 text-slate-300 hover:text-red-500" aria-label="Delete vocab">
                       <Trash2 size={13} />
                     </button>
                   </div>

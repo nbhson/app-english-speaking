@@ -1,0 +1,55 @@
+PRAGMA journal_mode = WAL;
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  mode TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER NOT NULL,
+  duration_sec INTEGER NOT NULL DEFAULT 0,
+  turns INTEGER NOT NULL DEFAULT 0,
+  corrections INTEGER NOT NULL DEFAULT 0,
+  avg_score REAL NOT NULL DEFAULT 0,
+  vocab_points INTEGER NOT NULL DEFAULT 0,
+  confidence INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  text TEXT NOT NULL DEFAULT '',
+  suggestion TEXT,
+  wpm INTEGER,
+  filler_count INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+
+CREATE TABLE IF NOT EXISTS mistakes (
+  id TEXT PRIMARY KEY,
+  original TEXT NOT NULL UNIQUE,
+  corrected TEXT NOT NULL DEFAULT '',
+  alternative TEXT NOT NULL DEFAULT '',
+  explanation TEXT NOT NULL DEFAULT '',
+  mode TEXT NOT NULL DEFAULT '',
+  review_count INTEGER NOT NULL DEFAULT 0,
+  mastered INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS vocab (
+  id TEXT PRIMARY KEY,
+  word TEXT NOT NULL UNIQUE,
+  translation TEXT NOT NULL DEFAULT '',
+  ipa TEXT NOT NULL DEFAULT '',
+  example TEXT NOT NULL DEFAULT '',
+  review_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS progress_days (
+  date TEXT PRIMARY KEY,
+  sessions INTEGER NOT NULL DEFAULT 0,
+  minutes INTEGER NOT NULL DEFAULT 0,
+  xp INTEGER NOT NULL DEFAULT 0
+);

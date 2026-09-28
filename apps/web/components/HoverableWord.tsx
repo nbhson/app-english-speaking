@@ -5,6 +5,7 @@ import { translateWord } from '../utils/api';
 import { translationCache } from '../utils/translationCache';
 import { speakWordFireAndForget } from '../utils/tts';
 import { saveVocab } from '../utils/storage';
+import { mirrorVocab } from '../utils/serverStore';
 
 interface Props {
   word: string;
@@ -107,6 +108,7 @@ export const HoverableWord: React.FC<Props> = ({ word, config }) => {
                       onClick={(e) => {
                         e.stopPropagation();
                         saveVocab({ word: cleanWord, translation: data.translation, ipa: data.ipa, example: data.example });
+                        mirrorVocab({ word: cleanWord, translation: data.translation, ipa: data.ipa, example: data.example });
                         setSaved(true);
                         setTimeout(() => setSaved(false), 1500);
                       }}
