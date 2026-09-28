@@ -8,7 +8,7 @@ const express = require('express');
 const cors = require('cors');
 const { DatabaseSync } = require('node:sqlite');
 
-const PORT = Number(process.env.PORT || 3001);
+const PORT = Number(process.env.PORT || 8241);
 const DB_PATH =
   process.env.DB_PATH || path.resolve(__dirname, '..', '..', '..', 'data', 'fluentdev.db');
 

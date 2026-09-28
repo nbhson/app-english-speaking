@@ -7,9 +7,9 @@ Express + SQLite via Node's built-in `node:sqlite` (no native deps, no auth).
 - Schema: `schema.sql` (`sessions` + `messages`, `mistakes`, `vocab`, `progress_days`)
 
 ```bash
-npm run dev      # watch mode, :3001
+npm run dev      # watch mode, :8241
 npm start        # plain start
-PORT=3001 DB_PATH=/tmp/x.db npm start
+PORT=8241 DB_PATH=/tmp/x.db npm start
 ```
 
 API: `GET /api/health`, CRUD under `/api/sessions`, `/api/mistakes`,

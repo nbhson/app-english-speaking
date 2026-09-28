@@ -107,7 +107,7 @@ npm install
 npm run dev
 
 # 3. Mở trình duyệt
-#    http://localhost:3000
+#    http://localhost:8240
 ```
 
 > ⚠️ **Bắt buộc**: Đảm bảo gateway AI đang chạy trước khi dùng. Với custom provider cục bộ:
@@ -264,7 +264,7 @@ ai-english-speaking-coach/
 ├── index.tsx                    # React root
 ├── package.json
 ├── tsconfig.json
-├── vite.config.ts               # Vite config (port 3000, alias @)
+├── vite.config.ts               # Vite config (port 8240, alias @)
 ├── metadata.json
 └── components/
 │   ├── SettingsModal.tsx        # UI cấu hình kết nối AI (localStorage)
@@ -297,7 +297,7 @@ ai-english-speaking-coach/
 
 | Script | Mô tả |
 |---|---|
-| `npm run dev` | Chạy dev server (Vite) tại `http://localhost:3000` |
+| `npm run dev` | Chạy dev server (Vite) tại `http://localhost:8240` |
 | `npm run build` | Build production ra `dist/` |
 | `npm run preview` | Xem trước bản build |
 | `npm run lint` | Kiểm tra type TypeScript (`tsc --noEmit`) |

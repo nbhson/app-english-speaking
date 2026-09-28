@@ -17,10 +17,10 @@ Custom Class / VN→EN) qua voice turn-based với AI Coach.
 
 ```bash
 npm install          # cài root + workspaces
-npm run dev          # server :3001 + web :3000 cùng lúc
+npm run dev          # server :8241 + web :8240 cùng lúc
 ```
 
-Mở `http://localhost:3000`. Server Library tạo `data/fluentdev.db` ở lần chạy đầu.
+Mở `http://localhost:8240`. Server Library tạo `data/fluentdev.db` ở lần chạy đầu.
 
 - Chỉ chạy web: `npm run dev:web` (Library dùng localStorage)
 - Chỉ chạy server: `npm run dev:server`

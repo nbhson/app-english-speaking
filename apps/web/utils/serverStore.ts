@@ -17,7 +17,7 @@ import {
 
 const BASE =
   (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_LIBRARY_API ||
-  'http://localhost:3001';
+  'http://localhost:8241';
 
 let available: boolean | null = null;
 let availableAt = 0;
