@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Volume2, Copy, Check } from 'lucide-react';
 import { useAIConfig } from '../context/AIConfigContext';
 import { speakWordFireAndForget } from '../utils/tts';
+import { parseCorrectionFields } from '../utils/storage';
 
 interface Props {
   content: string;
@@ -10,11 +11,10 @@ interface Props {
 export const CorrectionCard: React.FC<Props> = ({ content }) => {
   const config = useAIConfig();
   const [copied, setCopied] = useState(false);
-  const lines = content.split('\n');
-  const original = lines.find((l) => l.startsWith('Original:'))?.replace('Original:', '').trim();
-  const corrected = lines.find((l) => l.startsWith('Corrected:'))?.replace('Corrected:', '').trim();
-  const alternative = lines.find((l) => l.startsWith('Alternative:'))?.replace('Alternative:', '').trim();
-  const explanation = lines.find((l) => l.startsWith('Explanation:'))?.replace('Explanation:', '').trim();
+  const { original, corrected, alternative, explanation } = parseCorrectionFields(content);
+
+  // Never render a blank card — a parse miss should not show an empty box.
+  if (!original && !corrected && !alternative && !explanation) return null;
 
   return (
     <div className="my-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-500">

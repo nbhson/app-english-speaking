@@ -199,15 +199,35 @@ export function getActiveProfileId(): string {
   }
 }
 
+export function cleanCorrectionValue(v: string): string {
+  return v.trim().replace(/^\*\*|\*\*$/g, '').replace(/^"|"$/g, '').replace(/^_([^_]+)_$/, '$1').trim();
+}
+
+function normalizeCorrectionLine(line: string): string {
+  return line
+    .trim()
+    .replace(/^(?:[-*•>]|\d+[.)])\s+/, '')
+    .replace(/^\*\*([^*:]+?)\s*:?\s*\*\*:?\s*/, '$1: ')
+    .replace(/^__([^_:]+?)\s*:?\s*__:?\s*/, '$1: ')
+    .trim();
+}
+
+export function parseCorrectionFields(content: string): { original: string; corrected: string; alternative: string; explanation: string } {
+  const out = { original: '', corrected: '', alternative: '', explanation: '' };
+  for (const raw of content.split('\n')) {
+    const line = normalizeCorrectionLine(raw);
+    const m = line.match(/^(original|corrected|alternative|explanation)\s*:\s*(.*)$/i);
+    if (!m) continue;
+    const key = m[1].toLowerCase() as keyof typeof out;
+    if (!out[key]) out[key] = cleanCorrectionValue(m[2]);
+  }
+  return out;
+}
+
 export function parseCorrectionBlock(content: string): { original: string; corrected: string; alternative: string; explanation: string } | null {
-  const get = (label: string) => {
-    const m = content.match(new RegExp(`${label}:\\s*(.*)`, 'i'));
-    return m ? m[1].trim().replace(/^"|"$/g, '') : '';
-  };
-  const original = get('Original');
-  const corrected = get('Corrected');
+  const { original, corrected, alternative, explanation } = parseCorrectionFields(content);
   if (!original && !corrected) return null;
-  return { original, corrected, alternative: get('Alternative'), explanation: get('Explanation') };
+  return { original, corrected, alternative, explanation };
 }
 
 export type { AppMode };

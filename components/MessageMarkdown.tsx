@@ -119,6 +119,7 @@ export const MessageMarkdown: React.FC<Props> = ({ text, tone = 'coach' }) => {
             );
           },
           blockquote({ children }) {
+            if (!plainText(children).trim()) return null;
             return (
               <blockquote className="my-2 border-l-[3px] border-blue-400 dark:border-blue-500 bg-blue-50/70 dark:bg-blue-900/20 rounded-r-xl px-3 py-2 text-sm md:text-[15px] italic leading-relaxed [&>p]:mb-1 [&>p]:last:mb-0">
                 <Wordify idPrefix="q">{children}</Wordify>
