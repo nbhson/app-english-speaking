@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { X, Trash2, Volume2, Download, Check, RotateCcw } from 'lucide-react';
+import { X, Trash2, Volume2, Download, Check, RotateCcw, GraduationCap, MessageCircle } from 'lucide-react';
 import type { AIConfig } from '../utils/api';
+import type { AppMode } from '../types';
 import {
   getSessions, clearSessions, transcriptToMarkdown, downloadText,
   getMistakes, markMistakeReviewed, deleteMistake,
@@ -12,11 +13,12 @@ import { speakWordFireAndForget } from '../utils/tts';
 interface Props {
   config: AIConfig;
   onClose: () => void;
+  onPractice?: (mode: AppMode, prefill: string) => void;
 }
 
 type Tab = 'history' | 'mistakes' | 'vocab' | 'progress';
 
-export const LibraryPanel: React.FC<Props> = ({ config, onClose }) => {
+export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) => {
   const [tab, setTab] = useState<Tab>('history');
   const [refresh, setRefresh] = useState(0);
   const sessions = useMemo(() => getSessions(), [refresh, tab]);
@@ -87,10 +89,15 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose }) => {
                   <p className="text-sm font-bold text-green-700 dark:text-green-300">{m.corrected}</p>
                   {m.alternative && <p className="text-sm italic text-blue-700 dark:text-blue-300">“{m.alternative}”</p>}
                   {m.explanation && <p className="text-[11px] text-slate-500 italic mt-1">Why: {m.explanation}</p>}
-                  <div className="flex gap-2 mt-2">
+                  <div className="flex gap-2 mt-2 flex-wrap">
                     <button onClick={() => speakWordFireAndForget(config, m.alternative || m.corrected)} className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500" title="Nghe lại" aria-label="Listen">
                       <Volume2 size={13} />
                     </button>
+                    {onPractice && (
+                      <button onClick={() => onPractice('custom' as AppMode, m.corrected)} className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 rounded-lg" title="Luyện lại lỗi này trong Custom Class">
+                        <GraduationCap size={11} /> Luyện lại
+                      </button>
+                    )}
                     <button onClick={() => { markMistakeReviewed(m.id); bump(); }} className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg" title="Đã ôn 1 lần">
                       <RotateCcw size={11} /> Reviewed ({m.reviewCount})
                     </button>
@@ -121,6 +128,11 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose }) => {
                     <button onClick={() => speakWordFireAndForget(config, v.word)} className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500" aria-label={`Listen ${v.word}`}>
                       <Volume2 size={13} />
                     </button>
+                    {onPractice && (
+                      <button onClick={() => onPractice('daily' as AppMode, `Help me practice using the word "${v.word}" in conversation`)} className="p-1.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 rounded-lg" title="Đặt câu với từ này trong Daily" aria-label="Practice vocab">
+                        <MessageCircle size={13} />
+                      </button>
+                    )}
                     <button onClick={() => { deleteVocab(v.id); bump(); }} className="p-1.5 text-slate-300 hover:text-red-500" aria-label="Delete vocab">
                       <Trash2 size={13} />
                     </button>

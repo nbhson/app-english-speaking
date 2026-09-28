@@ -2,6 +2,8 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { Search } from 'lucide-react';
 import type { SessionAssessment } from '../types';
+import { AppMode } from '../types';
+import { MODE_CONFIGS } from '../modes';
 import { deriveInsight } from '../utils/assessment';
 import { avgSkill, cefrFromAvg } from '../utils/speechMetrics';
 
@@ -70,11 +72,14 @@ interface AssessmentPanelProps {
   turns?: number;
   streak?: number;
   xp?: number;
+  mode?: AppMode;
 }
 
-export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, hasData, duration, avgWpm = 0, fillerTotal = 0, turns = 0, streak = 0, xp = 0 }) => {
+export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, hasData, duration, avgWpm = 0, fillerTotal = 0, turns = 0, streak = 0, xp = 0, mode = AppMode.DAILY }) => {
   const avg = avgSkill(assessment);
   const cefr = hasData ? cefrFromAvg(avg) : '—';
+  const mc = MODE_CONFIGS[mode];
+  const paceNote = mode === AppMode.PRESENTATION ? (avgWpm > 0 ? (avgWpm < 130 ? ' hơi chậm' : avgWpm > 160 ? ' hơi nhanh' : ' chuẩn') : '') : '';
   return (
   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 shadow-sm flex flex-col h-full transition-colors">
     <h3 className="text-base sm:text-lg font-bold mb-3 sm:mb-4 flex items-center gap-2 text-slate-800 dark:text-white">
@@ -99,9 +104,9 @@ export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, ha
       <SessionStat icon="💪" label="Confidence" value={assessment.confidenceLevel} unit="%" />
     </div>
 
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6 sm:mb-8 text-center">
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4 text-center">
       {[
-        { l: 'WPM', v: avgWpm > 0 ? `${avgWpm}` : '—', t: 'Speaking pace (words/min)' },
+        { l: 'WPM', v: avgWpm > 0 ? `${avgWpm}${paceNote}` : '—', t: mode === AppMode.PRESENTATION ? 'Ideal 130-160 WPM' : 'Speaking pace (words/min)' },
         { l: 'Fillers', v: `${fillerTotal}`, t: 'um/uh/like count' },
         { l: 'Turns', v: `${turns}`, t: 'Your spoken turns' },
         { l: `🔥 ${streak}`, v: `${xp}XP`, t: 'Streak + total XP' },
@@ -111,6 +116,10 @@ export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, ha
           <div className="text-sm font-bold text-slate-800 dark:text-white">{s.v}</div>
         </div>
       ))}
+    </div>
+
+    <div className={`rounded-2xl border px-3 py-2.5 mb-4 text-[11px] leading-relaxed ${mc.accent}`}>
+      <span className="font-bold">Focus {mc.title}: </span>{mc.skills.join(' · ')} — {mc.rubric}
     </div>
 
     <h3 className="text-base sm:text-lg font-bold mb-4 sm:mb-6 md:mb-8 flex items-center gap-2 text-slate-800 dark:text-white">

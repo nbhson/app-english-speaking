@@ -4,8 +4,7 @@ export enum AppMode {
   MEETING = 'meeting',
   PRESENTATION = 'presentation',
   CUSTOM = 'custom',
-  TRANSLATE = 'translate',
-  SHADOW = 'shadow'
+  TRANSLATE = 'translate'
 }
 
 export type Difficulty = 'beginner' | 'intermediate' | 'advanced';

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppMode, TranscriptionEntry, SessionState, SpeechRecognition } from './types';
 import { SYSTEM_INSTRUCTION, MODE_INFO, DIFFICULTY_PROMPT, PERSONA_PROMPT } from './constants';
+import { MODE_CONFIGS, MODE_PROMPT_SNIPPET } from './modes';
 import {
   AIConfig,
   ChatMessage,
@@ -77,6 +78,8 @@ const App: React.FC = () => {
   );
   const [inputText, setInputText] = useState('');
   const [customTopic, setCustomTopic] = useState('');
+  const [scenarioId, setScenarioId] = useState<string>('weekend');
+  const [showPhrases, setShowPhrases] = useState(false);
   const [autoListen, setAutoListen] = useState(() => {
     if (typeof window !== 'undefined') {
       return window.localStorage.getItem('fluentdev-auto-listen') !== 'false';
@@ -103,6 +106,7 @@ const App: React.FC = () => {
   const processingRef = useRef(false);
   const speakingRef = useRef(false);
   const customTopicRef = useRef('');
+  const scenarioRef = useRef('weekend');
   const pendingTextRef = useRef('');
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -133,6 +137,10 @@ const App: React.FC = () => {
   useEffect(() => {
     customTopicRef.current = customTopic;
   }, [customTopic]);
+
+  useEffect(() => {
+    scenarioRef.current = scenarioId;
+  }, [scenarioId]);
 
   useEffect(() => {
     autoListenRef.current = autoListen;
@@ -200,13 +208,19 @@ const App: React.FC = () => {
     const cfg = configRef.current;
     if (cfg.systemPromptOverride?.trim()) return cfg.systemPromptOverride;
     const extra = `\n\nSTUDENT LEVEL: ${DIFFICULTY_PROMPT[cfg.difficulty ?? 'intermediate']}\nCOACH TONE: ${PERSONA_PROMPT[cfg.persona ?? 'encouraging']}`;
+    const modeSnippet = MODE_PROMPT_SNIPPET[mode] ?? '';
+    const scenario = MODE_CONFIGS[mode]?.scenarios?.find((s) => s.id === scenarioRef.current);
+    const scenarioLine = scenario ? `\nSCENARIO: ${scenario.label} — ${scenario.setup}` : '';
+    const customLine =
+      mode === AppMode.CUSTOM && customTopicRef.current.trim()
+        ? `\nLESSON TOPIC (CLASSROOM — STRICT, DO NOT DIGRESS): ${customTopicRef.current.trim()}\nYou are the TEACHER for this lesson. Open by confirming the topic + asking ONE level/goal check, then loop: teach ONE micro-point → 2 examples → ONE drill task → detailed correction. Stay 100% on this topic.`
+        : '';
     return (
       SYSTEM_INSTRUCTION +
       extra +
-      `\n\nCURRENT MODE: ${mode}` +
-      (mode === AppMode.CUSTOM && customTopicRef.current.trim()
-        ? `\nTOPIC TO FOCUS ON (STRICT - DO NOT DIGRESS): ${customTopicRef.current.trim()}\nYou MUST constrain all questions, examples, and corrections to this exact topic/structure. If the user wrote "chỉ", "only", "just", treat it as a hard boundary and do not introduce any other topic.`
-        : '')
+      `\n\nCURRENT MODE: ${mode}\nMODE BEHAVIOR: ${modeSnippet}` +
+      scenarioLine +
+      customLine
     );
   };
 
@@ -643,6 +657,11 @@ const App: React.FC = () => {
 
   const changeMode = (newMode: AppMode) => {
     setIsMobileSidebarOpen(false);
+    const def = MODE_CONFIGS[newMode]?.scenarios?.[0]?.id;
+    if (def) {
+      setScenarioId(def);
+      scenarioRef.current = def;
+    }
     if (session.isActive) {
       if (session.mode === newMode) return;
       setTranscriptions([]);
@@ -674,7 +693,15 @@ const App: React.FC = () => {
       {
         role: 'user',
         content:
-          'The student has ended the session. Please provide a final assessment using the [Assessment] block, briefly summarize strengths and areas to improve, then say goodbye.',
+          modeRef.current === AppMode.MEETING
+            ? 'The meeting is over. Provide [Assessment], then summarise: 3 strengths, 2 things to improve (conciseness + professionalism), plus action-items list from our discussion. Say goodbye.'
+            : modeRef.current === AppMode.PRESENTATION
+              ? 'The presentation is over. Provide [Assessment], then report: structure score, pace (use WPM if observable), filler words, 1 signposting tip, plus ONE tough Q&A question to practice next. Say goodbye.'
+              : modeRef.current === AppMode.CUSTOM
+                ? 'The lesson is over. Provide [Assessment], then give a 3-question mini-quiz on the lesson topic for homework plus a 2-sentence recap. Say goodbye.'
+                : modeRef.current === AppMode.TRANSLATE
+                  ? 'Session over. Provide [Assessment], then list the 3 most useful natural phrasings we learned with 1-line nuance each. Say goodbye.'
+                  : 'The student has ended the session. Please provide a final assessment using the [Assessment] block, briefly summarize strengths and areas to improve, then say goodbye.',
       },
     ];
 
@@ -831,36 +858,79 @@ const App: React.FC = () => {
           <section className="flex-1 flex flex-col min-h-0 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors min-w-0">
             <div ref={scrollRef} className={`flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6 scroll-smooth ${showAssessment ? 'pb-40 lg:pb-6' : ''}`}>
               {!session.isActive && !isConnecting && (
-                <div className="min-h-full flex flex-col items-center justify-center text-center max-w-md mx-auto py-8 px-2">
-                  <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-6">
-                    <span className="text-4xl" aria-hidden>
-                      {session.mode === AppMode.TRANSLATE ? '⌨️' : '🎙️'}
-                    </span>
-                  </div>
-                  <h2 className="text-2xl font-bold mb-2 dark:text-white">
-                    {session.mode === AppMode.TRANSLATE ? 'Ready to Translate?' : 'Ready to Speak English?'}
-                  </h2>
-                  <p className="text-slate-500 dark:text-slate-400 mb-6">
-                    {session.mode === AppMode.TRANSLATE
-                      ? 'Type your Vietnamese sentences and the AI will suggest natural English phrasing.'
-                      : 'Choose a session mode and start practicing naturally with your AI Coach.'}
-                  </p>
+                <div className="min-h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto py-8 px-2">
+                  {(() => {
+                    const mc = MODE_CONFIGS[session.mode];
+                    return (
+                      <>
+                        <div className={`w-full text-left rounded-2xl border px-4 py-3 mb-5 ${mc.accent}`}>
+                          <div className="text-xs font-bold uppercase tracking-widest opacity-70">{mc.coachRole} · {mc.tagline}</div>
+                          <div className="text-lg font-bold">{mc.title}</div>
+                          <div className="text-xs mt-1 opacity-80">{mc.description}</div>
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {mc.skills.map((s) => (
+                              <span key={s} className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/70 dark:bg-black/20">{s}</span>
+                            ))}
+                          </div>
+                        </div>
+                        <h2 className="text-2xl font-bold mb-2 dark:text-white">
+                          {session.mode === AppMode.TRANSLATE ? 'Ready to Translate?' : session.mode === AppMode.CUSTOM ? 'Ready for Class?' : 'Ready to Speak English?'}
+                        </h2>
 
-                  {session.mode === AppMode.CUSTOM && (
-                    <div className="w-full mb-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                      <label htmlFor="custom-topic" className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 text-left">
-                        What topic do you want to practice?
-                      </label>
-                      <input
-                        id="custom-topic"
-                        type="text"
-                        value={customTopic}
-                        onChange={(e) => setCustomTopic(e.target.value)}
-                        placeholder="e.g., Job Interview, Travel to Japan, Ordering Coffee..."
-                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                      />
-                    </div>
-                  )}
+                        {mc.scenarios && (
+                          <div className="w-full mb-4">
+                            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 text-left">
+                              {session.mode === AppMode.DAILY ? 'Choose a topic' : session.mode === AppMode.MEETING ? 'Choose meeting type' : session.mode === AppMode.PRESENTATION ? 'Choose stage' : session.mode === AppMode.CUSTOM ? 'Choose goal' : 'Choose context'}
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              {mc.scenarios.map((sc) => (
+                                <button
+                                  key={sc.id}
+                                  onClick={() => { setScenarioId(sc.id); scenarioRef.current = sc.id; }}
+                                  className={`text-left px-3 py-2.5 rounded-2xl border text-xs transition-all ${scenarioId === sc.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-sm' : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'}`}
+                                >
+                                  <div className="font-bold text-sm dark:text-white"><span className="mr-1">{sc.icon}</span>{sc.label}</div>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {session.mode === AppMode.CUSTOM && (
+                          <div className="w-full mb-4 text-left">
+                            <label htmlFor="custom-topic" className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                              What do you want to learn today?
+                            </label>
+                            <input
+                              id="custom-topic"
+                              type="text"
+                              value={customTopic}
+                              onChange={(e) => setCustomTopic(e.target.value)}
+                              placeholder="e.g., used to vs be used to, present perfect..."
+                              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                            />
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {mc.starters.map((s) => (
+                                <button key={s} onClick={() => setCustomTopic(s)} className="text-[11px] px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-blue-100 dark:hover:bg-blue-900/30">{s}</button>
+                              ))}
+                            </div>
+                            <p className="mt-2 text-[11px] text-slate-400 leading-relaxed">🎓 AI giảng → ví dụ → drill → sửa chi tiết. Cuối buổi có quiz 3 câu.</p>
+                          </div>
+                        )}
+
+                        {(session.mode === AppMode.DAILY || session.mode === AppMode.MEETING || session.mode === AppMode.PRESENTATION) && (
+                          <div className="w-full mb-4 text-left">
+                            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Quick starters</div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {mc.starters.map((s) => (
+                                <button key={s} onClick={() => { setInputText(s); }} className="text-[11px] px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-blue-100">“{s}”</button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
 
                   {startError && (
                     <div role="alert" className="w-full mb-4 text-left text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-xl px-4 py-3">
@@ -875,7 +945,7 @@ const App: React.FC = () => {
                   >
                     Start Session Now
                   </button>
-                  <p className="mt-4 text-xs text-slate-400 dark:text-slate-500">💡 Tip: Hover or focus any word to see its translation!</p>
+                  <p className="mt-4 text-xs text-slate-400 dark:text-slate-500">💡 {MODE_CONFIGS[session.mode].tip}</p>
                 </div>
               )}
 
@@ -889,6 +959,13 @@ const App: React.FC = () => {
                 </div>
               )}
 
+              {transcriptions.length === 0 && session.isActive && (
+                <div className={`rounded-2xl border px-4 py-3 text-xs ${MODE_CONFIGS[session.mode].accent}`}>
+                  <span className="font-bold">{MODE_CONFIGS[session.mode].coachRole}: </span>
+                  {MODE_CONFIGS[session.mode].scenarios?.find((s) => s.id === scenarioId)?.setup ?? MODE_CONFIGS[session.mode].description}
+                  {session.mode === AppMode.CUSTOM && customTopic ? ` · Topic: ${customTopic}` : ''}
+                </div>
+              )}
               {transcriptions.map((t) => (
                 <div key={t.id} className={`flex flex-col ${t.role === 'user' ? 'items-end' : 'items-start'} space-y-2`}>
                   <div
@@ -899,7 +976,7 @@ const App: React.FC = () => {
                     }`}
                   >
                     {t.role === 'model' && (
-                      <div className="text-[10px] font-bold uppercase tracking-wider mb-1 opacity-60">Coach</div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider mb-1 opacity-60">{MODE_CONFIGS[session.mode].coachRole}</div>
                     )}
                     <div className="text-sm md:text-base leading-relaxed whitespace-pre-wrap break-words">
                       {t.text === '' && t.role === 'model' ? (
@@ -971,6 +1048,20 @@ const App: React.FC = () => {
               {/* Universal text input — works in every mode (mic fallback) */}
               {session.isActive && (
                 <div className="flex flex-col gap-2">
+                {(MODE_CONFIGS[session.mode].phraseBank?.length ?? 0) > 0 && (
+                  <div className="flex flex-col gap-1">
+                    <button onClick={() => setShowPhrases((v) => !v)} className="self-start text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">
+                      {showPhrases ? '▾ Hide useful phrases' : '▸ Useful phrases for this mode'}
+                    </button>
+                    {showPhrases && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {MODE_CONFIGS[session.mode].phraseBank!.map((p) => (
+                          <button key={p} onClick={() => setInputText(p)} title="Tap to use" className="text-[11px] px-2.5 py-1 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-blue-400 hover:text-blue-600">“{p}”</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-center gap-1.5 sm:gap-2 bg-white dark:bg-slate-800 p-1.5 sm:p-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                   <label htmlFor="chat-input" className="sr-only">
                     Type your message
@@ -986,7 +1077,7 @@ const App: React.FC = () => {
                         sendTextMessage(inputText);
                       }
                     }}
-                    placeholder={session.mode === AppMode.TRANSLATE ? 'Nhập câu tiếng Việt bạn muốn dịch...' : session.mode === AppMode.SHADOW ? '…or type the sentence you just heard to check…' : '…or type here if mic fails — Enter to send'}
+                    placeholder={session.mode === AppMode.TRANSLATE ? 'Nhập câu tiếng Việt bạn muốn dịch...' : '…or type here if mic fails — Enter to send'}
                     className="flex-1 min-w-0 bg-transparent border-none focus:ring-0 text-[16px] sm:text-sm px-2 dark:text-white outline-none"
                   />
                   <button
@@ -1064,9 +1155,9 @@ const App: React.FC = () => {
                       <span className="text-sm font-bold text-slate-700 dark:text-slate-300">
                         {session.isActive
                           ? isProcessing
-                            ? 'Coach is thinking...'
+                            ? session.mode === AppMode.CUSTOM ? 'Teacher is checking your answer...' : 'Coach is thinking...'
                             : isSpeaking
-                              ? 'Coach is speaking...'
+                              ? session.mode === AppMode.CUSTOM ? 'Teacher is explaining...' : 'Coach is speaking...'
                               : isListening
                                 ? 'Session Active'
                                 : 'Listening paused'
@@ -1202,7 +1293,7 @@ const App: React.FC = () => {
                 aria-label="Assessment panel"
               >
                 <div className="w-[420px] h-full overflow-y-auto pr-1">
-                  <AssessmentPanel assessment={assessment} hasData={hasAssessmentData} duration={duration} avgWpm={avgWpm} fillerTotal={fillerTotal} turns={userTurns} streak={streak} xp={xp} />
+                  <AssessmentPanel assessment={assessment} hasData={hasAssessmentData} duration={duration} avgWpm={avgWpm} fillerTotal={fillerTotal} turns={userTurns} streak={streak} xp={xp} mode={session.mode} />
                 </div>
               </motion.aside>
             )}
@@ -1234,7 +1325,7 @@ const App: React.FC = () => {
                 </div>
               </div>
               <div className="px-1 pb-4">
-                <AssessmentPanel assessment={assessment} hasData={hasAssessmentData} duration={duration} avgWpm={avgWpm} fillerTotal={fillerTotal} turns={userTurns} streak={streak} xp={xp} />
+                <AssessmentPanel assessment={assessment} hasData={hasAssessmentData} duration={duration} avgWpm={avgWpm} fillerTotal={fillerTotal} turns={userTurns} streak={streak} xp={xp} mode={session.mode} />
               </div>
             </motion.div>
           )}
@@ -1252,7 +1343,16 @@ const App: React.FC = () => {
         )}
 
         {showSettings && <SettingsModal initial={config} onClose={() => setShowSettings(false)} onSaved={(cfg) => setConfig(cfg)} />}
-        {showLibrary && <LibraryPanel config={config} onClose={() => { setShowLibrary(false); setStreak(getStreak()); setXp(totalXP()); }} />}
+        {showLibrary && <LibraryPanel config={config} onClose={() => { setShowLibrary(false); setStreak(getStreak()); setXp(totalXP()); }} onPractice={(mode, prefill) => {
+          setShowLibrary(false);
+          if (mode === AppMode.CUSTOM) setCustomTopic(prefill);
+          if (mode === AppMode.DAILY) setInputText(prefill);
+          if (session.mode !== mode) {
+            const def = MODE_CONFIGS[mode]?.scenarios?.[0]?.id;
+            if (def) { setScenarioId(def); scenarioRef.current = def; }
+            setSession((prev) => ({ ...prev, mode }));
+          }
+        }} />}
       </div>
     </AIConfigProvider>
   );
