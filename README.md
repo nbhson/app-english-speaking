@@ -46,7 +46,8 @@
 |---|---|
 | 🎙️ **Voice conversation trực tiếp** | Nói chuyện với AI Coach như hai người: nghe → trả lời → đọc lại bằng giọng nói |
 | 🧠 **AI model cấu hình được** | Base URL / API key / model chỉnh ngay trong app (Settings ⚙️), lưu vào `localStorage` |
-| 🎯 **5 chế độ luyện tập** | Daily / Meeting / Presentation / Custom Topic / VN→EN Helper |
+| 🎯 **5 chế độ luyện tập** | Daily / Meeting / Presentation / Custom Class / VN→EN Helper — mỗi mode có scenario, phrase-bank và rubric chấm riêng (`modes.ts`) |
+| 🧑‍🏫 **Custom Class (classroom)** | AI đóng vai giáo viên: giảng 1 micro-point → 2 ví dụ → 1 drill → sửa chi tiết, cuối buổi quiz 3 câu |
 | 🛠️ **Real-time Correction** | Model phát hiện lỗi sai → hiện thẻ **Correction**: Original / Corrected / Better Alternative / Why |
 | 💡 **Natural Phrasing** | Gợi ý cách diễn đạt tự nhiên hơn cho từng câu của bạn |
 | 📊 **Assessment liên tục** | 9 kỹ năng + Vocab points + Confidence %, cập nhật real-time vào dashboard |
@@ -57,7 +58,8 @@
 | 🌐 **Dịch cả message** | Nút trên mỗi message để dịch toàn bộ sang tiếng Việt |
 | 📜 **Auto-scroll chat** | Main content tự động cuộn xuống tin nhắn mới nhất khi có nội dung mới — kể cả khi AI đang stream từng chữ |
 | 🎨 **Dark / Light mode** | Giao diện tối/sáng, nhớ lựa chọn của bạn. Dark theme dùng tông **đen/xám trung tính**, accent xanh dương chuẩn |
-| ⏱️ **Session stats** | Thời lượng phiên, điểm từ vựng, mức độ tự tin |
+| ⏱️ **Session stats** | Thời lượng phiên, WPM + filler words (đo local từ transcript), điểm từ vựng + confidence (AI chấm), streak/XP |
+| 🧭 **Header + panels đồng bộ** | Top bar nổi `rounded-2xl` cùng chiều ngang `<main>`; nút thu/mở Sidebar và Assessment nằm trên chính panel đó, không nằm trên top bar |
 
 ---
 
@@ -158,11 +160,11 @@ App hoạt động với **bất kỳ gateway AI nào hỗ trợ API OpenAI-comp
 
 | Chế độ | Icon | Mô tả |
 |---|---|---|
-| 🏠 **Daily Conversation** | `🏠` | Hội thoại giao tiếp hằng ngày |
-| 💼 **Business Meeting** | `💼` | Họp công việc, bàn về kế hoạch kiến trúc |
-| 📊 **Presentation Skills** | `📊` | Luyện thuyết trình / tech demo |
-| 🎯 **Custom Topic** | `🎯` | Nhập chủ đề tự do (phỏng vấn, du lịch, order cafe...) |
-| 🇻🇳 **VN to EN Helper** | `🇻🇳` | Gõ câu tiếng Việt → model gợi ý cách nói tiếng Anh tự nhiên (trả lời bằng tiếng Việt) |
+| 🏠 **Daily Conversation** | `🏠` | Small-talk đời thường, chọn topic (Weekend/Food/Travel/Tech life/Office), mỗi buổi 1 idiom + drill |
+| 💼 **Business Meeting** | `💼` | Mô phỏng họp thật: Standup/Planning/Retro/Client call, có phrase-bank business, cuối buổi tóm tắt action items |
+| 📊 **Presentation Skills** | `📊` | 3 stage: Outline → Deliver 1-2 phút → Tough Q&A, chấm structure/pace (130-160 WPM)/filler/signposting |
+| 🎓 **Custom Class** | `🎓` | Lớp 1-1: nhập 1 chủ điểm + chọn goal (Hiểu/Dùng/Quiz) → AI giảng → ví dụ → drill → sửa chi tiết |
+| 🇻🇳 **VN to EN Helper** | `🇻🇳` | Gõ câu tiếng Việt + chọn context (Casual/Business/Formal email) → 2-3 options + nuance tiếng Việt |
 
 ---
 
@@ -170,7 +172,8 @@ App hoạt động với **bất kỳ gateway AI nào hỗ trợ API OpenAI-comp
 
 ### Chế độ voice (Daily / Meeting / Presentation / Custom)
 
-1. Bấm **Start Speaking** → xin quyền microphone
+1. Chọn mode → chọn scenario (loại meeting/stage/topic/context) ở màn hình bắt đầu
+2. Bấm **Start Speaking** → xin quyền microphone
 2. Web Speech API **nghe liên tục**, mỗi câu hoàn chỉnh tự động gửi lên model
 3. Model trả lời streaming (SSE) — hiện text real-time vào chat
 4. Khi hoàn tất, **TTS đọc to câu trả lời** cho bạn nghe
@@ -231,6 +234,8 @@ Confidence: 70
 
 App parse block này cập nhật 9 thanh kỹ năng + **Vocab pts** + **Confidence %**. Model được hướng dẫn **không đọc điểm to** trong lời nói.
 
+> Nguồn điểm: 9 skills + Vocab + Confidence do **AI chấm** qua block này. WPM/filler/turns/duration/streak/XP do **app đo local** từ transcript (`utils/speechMetrics.ts`), CEFR suy từ điểm trung bình AI. Các điểm phát âm (Intonation/Linking/Stress...) là LLM ước lượng từ text, không phải phân tích audio.
+
 ### `[Insight]` → Coach Insight (AI viết)
 
 Model có thể kèm 1 block feedback cá nhân (1-2 câu nói trực tiếp với học viên — điểm mạnh + 1 điều cần tập trung):
@@ -252,7 +257,8 @@ App hiển thị block này vào ô **Coach Insight** trong panel đánh giá (k
 ```
 ai-english-speaking-coach/
 ├── App.tsx                      # UI + orchestration phiên (turn-based voice)
-├── constants.ts                 # System prompt của coach (correction + assessment format)
+├── constants.ts                 # Base system prompt (correction + assessment format)
+├── modes.ts                     # Config + prompt riêng từng mode (scenario, phrase-bank, rubric)
 ├── types.ts                     # TypeScript types + Web Speech API declarations
 ├── index.html                   # HTML entry (Tailwind CDN + tailwind.config darkMode class, CSS variables màu dark trong khối `.dark`, importmap React)
 ├── index.tsx                    # React root
@@ -261,7 +267,11 @@ ai-english-speaking-coach/
 ├── vite.config.ts               # Vite config (port 3000, alias @)
 ├── metadata.json
 └── components/
-│   └── SettingsModal.tsx        # UI cấu hình kết nối AI (localStorage)
+│   ├── SettingsModal.tsx        # UI cấu hình kết nối AI (localStorage)
+│   ├── Header.tsx               # Top bar nổi (logo + Library + Settings + theme)
+│   ├── Sidebar.tsx              # Danh sách 5 modes + tip theo mode
+│   ├── AssessmentPanel.tsx      # Session Statistics + Comprehensive Assessment theo mode
+│   └── LibraryPanel.tsx         # History / Mistakes / Vocab / Progress + nút luyện lại
 └── utils/
     └── api.ts                   # Config + custom provider client (chat/STT/TTS + translate)
 ```
@@ -272,7 +282,8 @@ ai-english-speaking-coach/
 |---|---|
 | `utils/api.ts` | `loadConfig`/`saveConfig` (localStorage), `chatStream` (SSE), `chatOnce`, `transcribe`, `speech`, `translateWord`, `translatePhrase` |
 | `components/SettingsModal.tsx` | Modal cấu hình Base URL / API key / Model / STT / TTS, nút Reset defaults |
-| `constants.ts` | `SYSTEM_INSTRUCTION` + `MODE_INFO` (mô tả 5 chế độ) |
+| `constants.ts` | Base `SYSTEM_INSTRUCTION` + `MODE_INFO` (tương thích cũ) |
+| `modes.ts` | `MODE_CONFIGS` + `MODE_PROMPT_SNIPPET`: scenario, phrase-bank, rubric và prompt riêng từng mode |
 | `App.tsx` | State & refs phiên, STT/TTS, xử lý `[Correction]`/`[Assessment]`, auto-scroll chat (`scrollRef`), HoverableWord, SelectionTranslator |
 
 ---
@@ -312,7 +323,10 @@ ai-english-speaking-coach/
 - [x] Browser voice picker + tốc độ/pitch + Test voice
 - [x] Lưu lịch sử session + sổ lỗi [Correction] + sổ từ vựng + streak/XP + chart 14 ngày
 - [x] Metrics thật: WPM, filler words, CEFR badge, XP/session
-- [x] Mode Shadowing + Difficulty (beginner/intermediate/advanced) + Persona + custom system prompt
+- [x] Custom Class classroom (AI = teacher) + prompt riêng từng mode + scenario/phrase-bank
+- [x] Header nổi đồng bộ `<main>`, thu/mở panel ngay trên panel
+- [ ] Mode Shadowing (đã loại bỏ — thay bằng Custom Class)
+- [x] Difficulty (beginner/intermediate/advanced) + Persona + custom system prompt
 - [x] Nhiều profile config cho nhiều provider
 - [x] Vitest: assessment parser + speech metrics (5 tests)
 - [x] PWA manifest + mobile drawer

@@ -28,7 +28,7 @@ import {
   saveSession, addMistake, parseCorrectionBlock, logSessionProgress,
   getStreak, totalXP, transcriptToMarkdown, downloadText,
 } from './utils/storage';
-import { Languages, Sparkles, Mic, X, ChevronRight, Loader2, Square, RotateCcw, Copy, Download, TriangleAlert } from 'lucide-react';
+import { Languages, Sparkles, Mic, X, ChevronRight, Loader2, Square, RotateCcw, Copy, Download, TriangleAlert, PanelLeft, PanelRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -783,13 +783,6 @@ const App: React.FC = () => {
         <Header
           isDarkMode={isDarkMode}
           toggleDarkMode={toggleDarkMode}
-          showSidebar={showSidebar}
-          toggleSidebar={() => {
-            if (window.innerWidth < 768) setIsMobileSidebarOpen((v) => !v);
-            else setShowSidebar(!showSidebar);
-          }}
-          showAssessment={showAssessment}
-          toggleAssessment={() => setShowAssessment(!showAssessment)}
           onOpenSettings={() => setShowSettings(true)}
           onOpenLibrary={() => setShowLibrary(true)}
         />
@@ -809,11 +802,24 @@ const App: React.FC = () => {
                 initial={{ width: 0, opacity: 0, x: -20 }}
                 animate={{ width: 280, opacity: 1, x: 0 }}
                 exit={{ width: 0, opacity: 0, x: -20 }}
-                className="hidden md:flex flex-col shrink-0 overflow-hidden"
+                className="hidden md:flex flex-col shrink-0 overflow-hidden bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm"
                 aria-label="Desktop practice modes"
               >
-                <div className="w-[280px]">
-                  <Sidebar activeMode={session.mode} onChangeMode={changeMode} />
+                <div className="w-[280px] flex flex-col h-full">
+                  <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 dark:border-slate-800">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Modes</span>
+                    <button
+                      onClick={() => setShowSidebar(false)}
+                      className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                      aria-label="Collapse practice modes"
+                      title="Collapse sidebar"
+                    >
+                      <ChevronsLeft size={16} />
+                    </button>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto p-3">
+                    <Sidebar activeMode={session.mode} onChangeMode={changeMode} />
+                  </div>
                 </div>
               </motion.nav>
             )}
@@ -856,6 +862,36 @@ const App: React.FC = () => {
 
           {/* Chat / Interaction Area */}
           <section className="flex-1 flex flex-col min-h-0 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors min-w-0">
+            <div className="flex items-center gap-2 px-2 sm:px-3 py-2 border-b border-slate-100 dark:border-slate-800 shrink-0">
+              <button
+                onClick={() => {
+                  if (window.innerWidth < 768) setIsMobileSidebarOpen(true);
+                  else setShowSidebar(true);
+                }}
+                className={`h-9 flex items-center gap-1.5 px-2.5 rounded-xl border text-xs font-bold transition-all ${(showSidebar || isMobileSidebarOpen) ? 'invisible w-0 px-0 overflow-hidden border-transparent' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                aria-label="Show practice modes"
+                title="Show practice modes"
+                tabIndex={(showSidebar || isMobileSidebarOpen) ? -1 : 0}
+              >
+                <PanelLeft size={16} />
+                <span className="hidden sm:inline">Modes</span>
+              </button>
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${MODE_CONFIGS[session.mode].dot}`} aria-hidden />
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{MODE_CONFIGS[session.mode].title}</span>
+                <span className="hidden sm:inline text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">· {MODE_CONFIGS[session.mode].scenarios?.find((s) => s.id === scenarioId)?.label ?? MODE_CONFIGS[session.mode].tagline}</span>
+              </div>
+              <button
+                onClick={() => setShowAssessment(true)}
+                className={`h-9 hidden lg:flex items-center gap-1.5 px-2.5 rounded-xl border text-xs font-bold transition-all ${showAssessment ? 'invisible w-0 px-0 overflow-hidden border-transparent' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                aria-label="Show assessment"
+                title="Show assessment panel"
+                tabIndex={showAssessment ? -1 : 0}
+              >
+                <PanelRight size={16} />
+                <span>Stats</span>
+              </button>
+            </div>
             <div ref={scrollRef} className={`flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6 scroll-smooth ${showAssessment ? 'pb-40 lg:pb-6' : ''}`}>
               {!session.isActive && !isConnecting && (
                 <div className="min-h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto py-8 px-2">
@@ -1292,8 +1328,22 @@ const App: React.FC = () => {
                 className="hidden lg:flex flex-col min-h-0 overflow-hidden shrink-0"
                 aria-label="Assessment panel"
               >
-                <div className="w-[420px] h-full overflow-y-auto pr-1">
-                  <AssessmentPanel assessment={assessment} hasData={hasAssessmentData} duration={duration} avgWpm={avgWpm} fillerTotal={fillerTotal} turns={userTurns} streak={streak} xp={xp} mode={session.mode} />
+                <div className="w-[420px] h-full flex flex-col min-h-0">
+                  <div className="flex items-center justify-between px-1 pb-2 shrink-0">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Assessment</span>
+                    <button
+                      onClick={() => setShowAssessment(false)}
+                      className="h-9 flex items-center gap-1.5 px-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold transition-all shadow-sm"
+                      aria-label="Collapse assessment panel"
+                      title="Collapse assessment"
+                    >
+                      <ChevronsRight size={16} />
+                      <span>Hide</span>
+                    </button>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+                    <AssessmentPanel assessment={assessment} hasData={hasAssessmentData} duration={duration} avgWpm={avgWpm} fillerTotal={fillerTotal} turns={userTurns} streak={streak} xp={xp} mode={session.mode} />
+                  </div>
                 </div>
               </motion.aside>
             )}
