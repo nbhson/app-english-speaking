@@ -22,6 +22,10 @@ export default tseslint.config(
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      // TODO (refactor #2): App.tsx god-component vi phạm purity/refs — hạ xuống warn
+      // cho tới khi chẻ App.tsx thành hooks. Code mới không được thêm vi phạm.
+      'react-hooks/purity': 'warn',
+      'react-hooks/refs': 'warn',
     },
   }
 );

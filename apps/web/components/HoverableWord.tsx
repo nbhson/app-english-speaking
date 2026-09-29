@@ -1,8 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Volume2, BookmarkPlus, Check } from 'lucide-react';
 import type { AIConfig, WordInfo } from '../utils/api';
 import { translateWord } from '../utils/api';
-import { translationCache } from '../utils/translationCache';
+import { translationCache, getInflight, setInflight } from '../utils/translationCache';
 import { speakWordFireAndForget } from '../utils/tts';
 import { saveVocab } from '../utils/storage';
 import { mirrorVocab } from '../utils/serverStore';
@@ -18,6 +18,13 @@ export const HoverableWord: React.FC<Props> = ({ word, config }) => {
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
   const hoverTimeout = useRef<number | null>(null);
+  const reqIdRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => {
+    if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+    abortRef.current?.abort();
+  }, []);
 
   const cleanWord = word.replace(/[^\w]/g, '').toLowerCase();
   const isActuallyAWord = cleanWord.length > 0;
@@ -29,15 +36,29 @@ export const HoverableWord: React.FC<Props> = ({ word, config }) => {
       setData(cached);
       return;
     }
+    const shared = getInflight(cleanWord);
+    if (shared) {
+      const result = await shared;
+      if (result) setData(result);
+      return;
+    }
+    // Cancel previous stale request
+    abortRef.current?.abort();
+    const ctl = new AbortController();
+    abortRef.current = ctl;
+    const myId = ++reqIdRef.current;
     setLoading(true);
+    const p = translateWord(config, cleanWord, ctl.signal);
+    setInflight(cleanWord, p);
     try {
-      const result = await translateWord(config, cleanWord);
+      const result = await p;
+      if (ctl.signal.aborted || myId !== reqIdRef.current) return;
       if (result) {
         translationCache.set(cleanWord, result);
         setData(result);
       }
     } finally {
-      setLoading(false);
+      if (myId === reqIdRef.current) setLoading(false);
     }
   };
 
@@ -50,7 +71,12 @@ export const HoverableWord: React.FC<Props> = ({ word, config }) => {
   };
 
   const handleMouseLeave = () => {
-    if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+    if (hoverTimeout.current) {
+      clearTimeout(hoverTimeout.current);
+      hoverTimeout.current = null;
+    }
+    // Invalidate pending fetch so a fast hover-out/in doesn't show stale data
+    reqIdRef.current++;
     setShowTooltip(false);
   };
 

@@ -3,6 +3,7 @@
 
 import type { AIConfig } from './api';
 import { DEFAULT_CONFIG } from './api';
+import { scheduleNextReview } from './srs';
 import type { AppMode, MistakeEntry, ProgressDay, SessionRecord, TranscriptionEntry, VocabEntry } from '../types';
 
 const K = {
@@ -84,9 +85,19 @@ export function addMistake(m: Omit<MistakeEntry, 'id' | 'createdAt' | 'reviewCou
 }
 
 export function markMistakeReviewed(id: string, mastered?: boolean): MistakeEntry[] {
-  const next = getMistakes().map((m) =>
-    m.id === id ? { ...m, reviewCount: m.reviewCount + 1, mastered: mastered ?? m.mastered } : m,
-  );
+  const now = Date.now();
+  const next = getMistakes().map((m) => {
+    if (m.id !== id) return m;
+    const reviewCount = m.reviewCount + 1;
+    return {
+      ...m,
+      reviewCount,
+      mastered: mastered ?? m.mastered,
+      lastReviewedAt: now,
+      // Mastered items leave the SRS queue far in the future; others follow SM-2 lite steps.
+      nextReview: mastered === true ? now + 365 * 24 * 60 * 60 * 1000 : scheduleNextReview(reviewCount, now),
+    };
+  });
   write(K.mistakes, next);
   return next;
 }
@@ -101,7 +112,6 @@ export function deleteMistake(id: string): MistakeEntry[] {
 export function getVocab(): VocabEntry[] {
   return read<VocabEntry[]>(K.vocab, []);
 }
-
 export function saveVocab(v: Omit<VocabEntry, 'id' | 'createdAt' | 'reviewCount'>): VocabEntry[] {
   const all = getVocab();
   if (all.some((x) => x.word.toLowerCase() === v.word.toLowerCase())) return all;
@@ -113,6 +123,17 @@ export function saveVocab(v: Omit<VocabEntry, 'id' | 'createdAt' | 'reviewCount'
 
 export function deleteVocab(id: string): VocabEntry[] {
   const next = getVocab().filter((v) => v.id !== id);
+  write(K.vocab, next);
+  return next;
+}
+
+export function markVocabReviewed(id: string): VocabEntry[] {
+  const now = Date.now();
+  const next = getVocab().map((v) =>
+    v.id === id
+      ? { ...v, reviewCount: v.reviewCount + 1, lastReviewedAt: now, nextReview: scheduleNextReview(v.reviewCount + 1, now) }
+      : v,
+  );
   write(K.vocab, next);
   return next;
 }
@@ -228,6 +249,95 @@ export function parseCorrectionBlock(content: string): { original: string; corre
   const { original, corrected, alternative, explanation } = parseCorrectionFields(content);
   if (!original && !corrected) return null;
   return { original, corrected, alternative, explanation };
+}
+
+// --- Full Library backup (export/import JSON) ---
+export interface LibraryBackup {
+  version: 1;
+  exportedAt: number;
+  sessions: SessionRecord[];
+  mistakes: MistakeEntry[];
+  vocab: VocabEntry[];
+  progress: ProgressDay[];
+}
+
+export function exportLibrary(): string {
+  const backup: LibraryBackup = {
+    version: 1,
+    exportedAt: Date.now(),
+    sessions: getSessions(),
+    mistakes: getMistakes(),
+    vocab: getVocab(),
+    progress: getProgress(),
+  };
+  return JSON.stringify(backup, null, 2);
+}
+
+function dedupeBy<T>(list: T[], key: (t: T) => string): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of list) {
+    const k = key(item);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(item);
+  }
+  return out;
+}
+
+export function importLibrary(json: string): { sessions: number; mistakes: number; vocab: number; progress: number } {
+  const parsed = JSON.parse(json) as Partial<LibraryBackup>;
+  if (!parsed || typeof parsed !== 'object') throw new Error('Invalid backup file');
+  const sessions = Array.isArray(parsed.sessions) ? parsed.sessions : [];
+  const mistakes = Array.isArray(parsed.mistakes) ? parsed.mistakes : [];
+  const vocab = Array.isArray(parsed.vocab) ? parsed.vocab : [];
+  const progress = Array.isArray(parsed.progress) ? parsed.progress : [];
+
+  const mergedSessions = dedupeBy(
+    [...sessions, ...getSessions()].filter((s) => s && typeof s.id === 'string'),
+    (s) => s.id,
+  ).slice(0, 100);
+  const mergedMistakes = dedupeBy(
+    [...mistakes, ...getMistakes()].filter((m) => m && typeof m.original === 'string'),
+    (m) => m.original.toLowerCase(),
+  ).slice(0, 300);
+  const mergedVocab = dedupeBy(
+    [...vocab, ...getVocab()].filter((v) => v && typeof v.word === 'string'),
+    (v) => v.word.toLowerCase(),
+  ).slice(0, 500);
+  const mergedProgress = dedupeBy(
+    [...progress, ...getProgress()].filter((d) => d && typeof d.date === 'string'),
+    (d) => d.date,
+  )
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
+    .slice(0, 90);
+
+  write(K.sessions, mergedSessions);
+  write(K.mistakes, mergedMistakes);
+  write(K.vocab, mergedVocab);
+  write(K.progress, mergedProgress);
+  return {
+    sessions: mergedSessions.length,
+    mistakes: mergedMistakes.length,
+    vocab: mergedVocab.length,
+    progress: mergedProgress.length,
+  };
+}
+
+// --- Anki-friendly TSV export (mistakes + vocab) ---
+export function exportAnkiTSV(): string {
+  const lines = ['#separator:tab', '#html:false'];
+  for (const m of getMistakes()) {
+    const front = (m.original || '').replace(/\t|\n/g, ' ');
+    const back = `${m.corrected || ''} — ${m.explanation || m.alternative || ''}`.replace(/\t|\n/g, ' ').trim();
+    if (front) lines.push(`${front}\t${back}`);
+  }
+  for (const v of getVocab()) {
+    const front = (v.word || '').replace(/\t|\n/g, ' ');
+    const back = `${v.translation || ''} ${v.ipa || ''} — ${v.example || ''}`.replace(/\t|\n/g, ' ').trim();
+    if (front) lines.push(`${front}\t${back}`);
+  }
+  return lines.join('\n');
 }
 
 export type { AppMode };

@@ -130,8 +130,7 @@ export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, ha
     </h3>
 
     <div className="space-y-3 sm:space-y-4 flex-1">
-      {!hasData ? (
-        <div className="h-full flex flex-col items-center justify-center text-center px-4">
+      {!hasData ? (        <div className="h-full flex flex-col items-center justify-center text-center px-4">
           <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 border border-slate-100 dark:border-slate-700">
             <Search className="text-slate-300 dark:text-slate-600" size={24} />
           </div>
@@ -154,6 +153,9 @@ export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, ha
           <AssessmentBar label="Linking" value={assessment.linking} />
           <AssessmentBar label="Final Sound" value={assessment.finalSound} />
           <AssessmentBar label="Stress" value={assessment.stress} />
+          <p className="text-[10px] text-slate-400 dark:text-slate-500 italic leading-relaxed pt-1">
+            * Intonation / Linking / Stress / Final Sound là ước lượng của AI từ transcript (text), không phải phân tích audio thật.
+          </p>
         </>
       )}
     </div>

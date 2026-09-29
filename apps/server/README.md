@@ -3,6 +3,8 @@
 Local-first storage backend for FluentDev's 📚 My Learning Library.
 Express + SQLite via Node's built-in `node:sqlite` (no native deps, no auth).
 
+> Yêu cầu **Node.js ≥ 22** (`node:sqlite` chỉ có từ Node 22.5+).
+
 - DB file: `<repo>/data/fluentdev.db` (auto-created, gitignored — override with `DB_PATH`)
 - Schema: `schema.sql` (`sessions` + `messages`, `mistakes`, `vocab`, `progress_days`)
 

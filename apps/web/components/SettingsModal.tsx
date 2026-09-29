@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { AIConfig, DEFAULT_CONFIG, saveConfig, speech } from '../utils/api';
-import { X, Save, RotateCcw, Plug, Mic, Volume2, MessageSquare, Play, Loader2, User, SlidersHorizontal, FileText, Layers } from 'lucide-react';
+import { AIConfig, DEFAULT_CONFIG, saveConfig, chatOnce, speech } from '../utils/api';
+import { X, Save, RotateCcw, Plug, Mic, Volume2, MessageSquare, Play, Loader2, User, SlidersHorizontal, FileText, Layers, Wifi } from 'lucide-react';
 import { englishVoices } from '../utils/browser';
 import { getProfiles, saveProfiles, getActiveProfileId, type NamedProfile } from '../utils/storage';
 import { uid } from '../utils/storage';
@@ -61,6 +61,8 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
   const [cfg, setCfg] = useState<AIConfig>({ ...initial });
   const [testingVoice, setTestingVoice] = useState(false);
   const [testVoiceError, setTestVoiceError] = useState<string | null>(null);
+  const [testingConn, setTestingConn] = useState(false);
+  const [connResult, setConnResult] = useState<{ ok: boolean; ms: number; msg: string } | null>(null);
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [profiles, setProfiles] = useState<NamedProfile[]>(() => getProfiles());
   const [activeId, setActiveId] = useState(() => getActiveProfileId());
@@ -68,6 +70,15 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
 
   const set = <K extends keyof AIConfig>(key: K, value: AIConfig[K]) =>
     setCfg(prev => ({ ...prev, [key]: value }));
+
+  // Esc to close + basic focus trap (a11y)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   useEffect(() => {
     const load = () => setBrowserVoices(englishVoices().length ? englishVoices() : []);
@@ -79,6 +90,30 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
     }
     return () => { if ('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged = null; };
   }, []);
+
+  const handleTestConnection = async () => {
+    setTestingConn(true);
+    setConnResult(null);
+    const t0 = performance.now();
+    try {
+      const reply = await chatOnce(cfg, [
+        { role: 'system', content: 'You are a connectivity probe.' },
+        { role: 'user', content: 'Reply with exactly: OK' },
+      ]);
+      const ms = Math.round(performance.now() - t0);
+      const ok = reply.trim().toUpperCase().includes('OK');
+      setConnResult({
+        ok,
+        ms,
+        msg: ok ? `Connected in ${ms}ms · model replied "${reply.trim().slice(0, 60)}"` : `Unexpected reply in ${ms}ms: "${reply.trim().slice(0, 120)}"`,
+      });
+    } catch (e) {
+      const ms = Math.round(performance.now() - t0);
+      setConnResult({ ok: false, ms, msg: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setTestingConn(false);
+    }
+  };
 
   const handleTestVoice = async () => {
     setTestingVoice(true);
@@ -142,7 +177,7 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="AI Connection Settings">
       <div className="w-full sm:max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[90vh] flex flex-col animate-in fade-in zoom-in duration-200 overflow-hidden">
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
           <div className="flex items-center gap-2">
@@ -202,6 +237,17 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
                   {MODEL_SUGGESTIONS.map(m => (<option key={m} value={m} />))}
                 </datalist>
               </Field>
+              <div>
+                <button onClick={handleTestConnection} disabled={testingConn} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 transition-all">
+                  {testingConn ? <Loader2 size={13} className="animate-spin" /> : <Wifi size={13} />}
+                  {testingConn ? 'Testing…' : 'Test connection'}
+                </button>
+                {connResult && (
+                  <p className={`text-[11px] mt-1.5 break-words ${connResult.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                    {connResult.ok ? '✅ ' : '❌ '}{connResult.msg}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 

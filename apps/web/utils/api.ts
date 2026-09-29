@@ -172,12 +172,13 @@ export async function chatStream(
 }
 
 /** Non-streaming chat completion — returns just the assistant text. */
-export async function chatOnce(config: AIConfig, messages: ChatMessage[]): Promise<string> {
+export async function chatOnce(config: AIConfig, messages: ChatMessage[], signal?: AbortSignal): Promise<string> {
   const url = `${baseUrl(config)}/chat/completions`;
   const res = await fetch(url, {
     method: 'POST',
     headers: buildHeaders(config),
     body: JSON.stringify({ model: config.model, messages, stream: false }),
+    signal,
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
@@ -228,7 +229,7 @@ export interface WordInfo {
   example: string;
 }
 
-export async function translateWord(config: AIConfig, word: string): Promise<WordInfo | null> {
+export async function translateWord(config: AIConfig, word: string, signal?: AbortSignal): Promise<WordInfo | null> {
   try {
     const raw = await chatOnce(config, [
       {
@@ -241,7 +242,7 @@ export async function translateWord(config: AIConfig, word: string): Promise<Wor
           'If the word is unknown/misspelled, still return JSON with best guess translation and empty ipa/example as "".',
       },
       { role: 'user', content: word },
-    ]);
+    ], signal);
     const match = raw.match(/\{[\s\S]*\}/);
     const parsed = JSON.parse(match ? match[0] : raw);
     return {
@@ -250,12 +251,13 @@ export async function translateWord(config: AIConfig, word: string): Promise<Wor
       example: (parsed.example ?? '').toString().slice(0, 120),
     };
   } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') return null;
     console.error('Word translation error', e);
     return null;
   }
 }
 
-export async function translatePhrase(config: AIConfig, text: string): Promise<string | null> {
+export async function translatePhrase(config: AIConfig, text: string, signal?: AbortSignal): Promise<string | null> {
   try {
     const result = await chatOnce(config, [
       {
@@ -267,10 +269,11 @@ export async function translatePhrase(config: AIConfig, text: string): Promise<s
           'Return ONLY the translated string, no quotes, no markdown, no explanation, no alternative.',
       },
       { role: 'user', content: text },
-    ]);
+    ], signal);
     // Strip accidental quotes/fences the model might add
     return result.trim().replace(/^["'`“”]+|["'`“”]+$/g, '').replace(/^```.*\n?/, '').replace(/```$/,'').trim() || null;
   } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') return null;
     console.error('Phrase translation error', e);
     return null;
   }

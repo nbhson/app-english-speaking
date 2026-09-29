@@ -12,8 +12,6 @@ const iconBtn =
   'w-10 h-10 flex items-center justify-center rounded-2xl border transition-all active:scale-95';
 const iconBtnIdle =
   `${iconBtn} bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700`;
-const iconBtnActive =
-  `${iconBtn} bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-600/20`;
 
 export const Header: React.FC<Props> = ({
   isDarkMode,

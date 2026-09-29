@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Languages, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { AIConfig } from '../utils/api';
@@ -12,6 +12,7 @@ export const SelectionTranslator: React.FC<Props> = ({ config }) => {
   const [selection, setSelection] = useState<{ text: string; x: number; y: number } | null>(null);
   const [translation, setTranslation] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const handleMouseUp = (e: MouseEvent) => {
@@ -43,17 +44,28 @@ export const SelectionTranslator: React.FC<Props> = ({ config }) => {
       }
     };
     document.addEventListener('mouseup', handleMouseUp);
-    return () => document.removeEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mouseup', handleMouseUp);
+      abortRef.current?.abort();
+    };
   }, []);
 
+  // Abort stale translation when selection changes/closes
+  useEffect(() => () => abortRef.current?.abort(), []);
+
   const handleTranslate = async () => {
-    if (!selection) return;
+    if (!selection || loading) return;
+    abortRef.current?.abort();
+    const ctl = new AbortController();
+    abortRef.current = ctl;
+    const wanted = selection.text;
     setLoading(true);
     try {
-      const result = await translatePhrase(config, selection.text);
+      const result = await translatePhrase(config, wanted, ctl.signal);
+      if (ctl.signal.aborted) return;
       setTranslation(result);
     } finally {
-      setLoading(false);
+      if (!ctl.signal.aborted) setLoading(false);
     }
   };
 

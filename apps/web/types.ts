@@ -56,6 +56,8 @@ export interface MistakeEntry {
   createdAt: number;
   reviewCount: number;
   mastered?: boolean;
+  lastReviewedAt?: number;
+  nextReview?: number;
 }
 
 export interface VocabEntry {
@@ -66,6 +68,8 @@ export interface VocabEntry {
   example: string;
   createdAt: number;
   reviewCount: number;
+  lastReviewedAt?: number;
+  nextReview?: number;
 }
 
 export interface SessionRecord {

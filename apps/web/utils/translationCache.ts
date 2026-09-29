@@ -38,3 +38,17 @@ class LRUCache<K, V> {
 }
 
 export const translationCache = new LRUCache<string, WordInfo>();
+
+// In-flight dedupe: multiple hovers on the same word share one network request.
+const inflight = new Map<string, Promise<WordInfo | null>>();
+
+export function getInflight(key: string): Promise<WordInfo | null> | undefined {
+  return inflight.get(key);
+}
+
+export function setInflight(key: string, p: Promise<WordInfo | null>): void {
+  inflight.set(key, p);
+  void p.finally(() => {
+    if (inflight.get(key) === p) inflight.delete(key);
+  });
+}

@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-blue)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-6-purple)](https://vite.dev/)
-[![Tailwind](https://img.shields.io/badge/Tailwind-CDN-38bdf8)](https://tailwindcss.com/)
+[![Tailwind](https://img.shields.io/badge/Tailwind-Vite_plugin-38bdf8)](https://tailwindcss.com/)
 [![License](https://img.shields.io/badge/License-MIT-green)]()
 
 ---
@@ -66,7 +66,7 @@
 ## 🧱 Công nghệ
 
 - **Frontend**: React 19 + TypeScript + Vite 6
-- **Styling**: Tailwind CSS (qua CDN) + [Motion](https://motion.dev/) (Framer Motion) cho animation
+- **Styling**: Tailwind CSS (qua `@tailwindcss/vite` plugin) + [Motion](https://motion.dev/) (Framer Motion) cho animation
 - **Icons**: lucide-react
 - **Voice**:
   - **STT** (Speech-to-Text): Web Speech API (browser) *hoặc* custom provider `/v1/audio/transcriptions`
@@ -97,7 +97,7 @@
 
 ## 🚀 Cài đặt & chạy
 
-**Yêu cầu**: Node.js ≥ 18
+**Yêu cầu**: Node.js ≥ 22 (do `apps/server` dùng `node:sqlite` built-in, chỉ có từ Node 22+)
 
 ```bash
 # 1. Cài dependencies

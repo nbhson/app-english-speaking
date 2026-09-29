@@ -116,6 +116,7 @@ const App: React.FC = () => {
   const recognitionStartedRef = useRef(false);
   const autoListenRef = useRef(autoListen);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const lastCoachTextRef = useRef('');
@@ -132,8 +133,15 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && stickToBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [transcriptions]);
+
+  const handleChatScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // Consider "near bottom" as within 96px — user reading history won't be yanked down.
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+  };
 
   useEffect(() => {
     customTopicRef.current = customTopic;
@@ -887,7 +895,7 @@ const App: React.FC = () => {
                 <span>Stats</span>
               </button>
             </div>
-            <div ref={scrollRef} className={`flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6 scroll-smooth ${showAssessment ? 'pb-40 lg:pb-6' : ''}`}>
+            <div ref={scrollRef} onScroll={handleChatScroll} className={`flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6 scroll-smooth ${showAssessment ? 'pb-40 lg:pb-6' : ''}`}>
               {!session.isActive && !isConnecting && (
                 <div className="min-h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto py-8 px-2">
                   {(() => {
