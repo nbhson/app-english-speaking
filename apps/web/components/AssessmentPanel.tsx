@@ -81,7 +81,7 @@ export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, ha
   const mc = MODE_CONFIGS[mode];
   const paceNote = mode === AppMode.PRESENTATION ? (avgWpm > 0 ? (avgWpm < 130 ? ' hơi chậm' : avgWpm > 160 ? ' hơi nhanh' : ' chuẩn') : '') : '';
   return (
-  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 shadow-sm flex flex-col h-full transition-colors">
+  <div className="flex flex-col h-full p-1 sm:p-2 transition-colors">
     <h3 className="text-base sm:text-lg font-bold mb-3 sm:mb-4 flex items-center gap-2 text-slate-800 dark:text-white">
       <span className="text-[#2D8A82]" aria-hidden>
         📊

@@ -122,6 +122,10 @@ const App: React.FC = () => {
   const lastCoachTextRef = useRef('');
   const turnStartRef = useRef<number>(Date.now());
   const wpmSamplesRef = useRef<number[]>([]);
+  // STT buffering: group speech across short pauses, flush after 3s silence.
+  const speechBufferRef = useRef('');
+  const interimRef = useRef('');
+  const silenceTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     configRef.current = config;
@@ -130,6 +134,12 @@ const App: React.FC = () => {
   useEffect(() => {
     transcriptionsRef.current = transcriptions;
   }, [transcriptions]);
+
+  useEffect(() => {
+    return () => {
+      if (silenceTimerRef.current !== null) window.clearTimeout(silenceTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -208,7 +218,10 @@ const App: React.FC = () => {
       !processingRef.current &&
       !speakingRef.current
     ) {
-      turnStartRef.current = Date.now();
+      // Keep original turn start while buffering across pauses.
+      if (!speechBufferRef.current.trim() && !interimRef.current.trim()) {
+        turnStartRef.current = Date.now();
+      }
       startRecognition();
     }
   };
@@ -467,6 +480,29 @@ const App: React.FC = () => {
     processUserTextRef.current = processUserText;
   });
 
+  const clearSilenceTimer = () => {
+    if (silenceTimerRef.current !== null) {
+      window.clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  };
+
+  const flushSpeechBuffer = () => {
+    clearSilenceTimer();
+    const buffered = `${speechBufferRef.current} ${interimRef.current}`.trim();
+    speechBufferRef.current = '';
+    interimRef.current = '';
+    if (buffered) void processUserTextRef.current(buffered);
+  };
+
+  const scheduleSilenceFlush = () => {
+    clearSilenceTimer();
+    silenceTimerRef.current = window.setTimeout(() => {
+      silenceTimerRef.current = null;
+      flushSpeechBuffer();
+    }, 3000);
+  };
+
   const startRecording = () => {
     if (!streamRef.current || isRecording) return;
     try {
@@ -537,6 +573,9 @@ const App: React.FC = () => {
 
   const stopSession = (save = true) => {
     if (save && activeRef.current) persistSession();
+    clearSilenceTimer();
+    speechBufferRef.current = '';
+    interimRef.current = '';
     stopRecognition();
     if (abortRef.current) {
       abortRef.current.abort();
@@ -582,15 +621,34 @@ const App: React.FC = () => {
       const rec = new SR();
       rec.lang = 'en-US';
       rec.continuous = true;
-      rec.interimResults = false;
+      rec.interimResults = true;
       rec.maxAlternatives = 1;
       rec.onresult = (event) => {
-        let transcript = '';
+        if (!activeRef.current || processingRef.current || speakingRef.current) return;
+        let finalChunk = '';
+        let interimChunk = '';
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const res = event.results[i];
-          if (res.isFinal) transcript += res[0]?.transcript || '';
+          const text = res[0]?.transcript || '';
+          if (res.isFinal) finalChunk += text;
+          else interimChunk += text;
         }
-        if (transcript.trim()) void processUserTextRef.current(transcript);
+        const hadBuffer = speechBufferRef.current.trim().length > 0;
+        if (finalChunk.trim()) {
+          speechBufferRef.current = `${speechBufferRef.current} ${finalChunk}`.trim();
+        }
+        if (interimChunk.trim()) {
+          interimRef.current = interimChunk.trim();
+        }
+        // New speech started a turn — mark turn start once per utterance.
+        if (!hadBuffer && speechBufferRef.current.trim()) {
+          turnStartRef.current = Date.now();
+        }
+        // Any speech activity (final or interim) resets the 3s silence window.
+        // Browser may auto-end on pause; onend below restarts so we keep capturing.
+        if (finalChunk.trim() || interimChunk.trim()) {
+          scheduleSilenceFlush();
+        }
       };
       rec.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
@@ -606,10 +664,15 @@ const App: React.FC = () => {
       };
       rec.onend = () => {
         recognitionStartedRef.current = false;
-        setIsListening(false);
+        // Keep mic indicator on while waiting out the 3s silence window.
+        const hasPendingSpeech = speechBufferRef.current.trim().length > 0 || interimRef.current.trim().length > 0;
+        if (!hasPendingSpeech) setIsListening(false);
         if (activeRef.current && !processingRef.current && !speakingRef.current && configRef.current.sttEngine === 'browser') {
-          // Prevent tight loop on repeated errors: backoff 300ms
+          // Browser auto-ends on pause — restart fast to keep capturing the same utterance.
+          // The 3s silence timer decides when the turn is really over.
           setTimeout(() => resumeListening(), 300);
+        } else if (!hasPendingSpeech) {
+          setIsListening(false);
         }
       };
       recognitionRef.current = rec;
@@ -633,6 +696,9 @@ const App: React.FC = () => {
     wpmSamplesRef.current = [];
     turnStartRef.current = Date.now();
     lastCoachTextRef.current = '';
+    clearSilenceTimer();
+    speechBufferRef.current = '';
+    interimRef.current = '';
 
     // Safari/Firefox: no Web Speech -> auto-suggest custom STT instead of hard fail
     if (mode !== AppMode.TRANSLATE && configRef.current.sttEngine === 'browser' && !isBrowserSTTSupported()) {
@@ -697,6 +763,14 @@ const App: React.FC = () => {
 
   const finishAndAssess = async () => {
     if (!activeRef.current) return;
+    // Don't lose speech spoken within the 3s window when user hits Finish.
+    const pendingSpeech = `${speechBufferRef.current} ${interimRef.current}`.trim();
+    clearSilenceTimer();
+    speechBufferRef.current = '';
+    interimRef.current = '';
+    if (pendingSpeech) {
+      setTranscriptions((prev) => [...prev, { id: uid(), role: 'user', text: pendingSpeech, timestamp: Date.now() }]);
+    }
     stopRecognition();
     processingRef.current = true;
     setIsProcessing(true);
@@ -707,6 +781,7 @@ const App: React.FC = () => {
         role: (t.role === 'user' ? 'user' : 'assistant') as ChatMessage['role'],
         content: t.text,
       })),
+      ...(pendingSpeech ? [{ role: 'user' as const, content: pendingSpeech }] : []),
       {
         role: 'user',
         content:
@@ -892,7 +967,7 @@ const App: React.FC = () => {
                 tabIndex={showAssessment ? -1 : 0}
               >
                 <PanelRight size={16} />
-                <span>Stats</span>
+                <span className="hidden sm:inline">Assessment</span>
               </button>
             </div>
             <div ref={scrollRef} onScroll={handleChatScroll} className={`flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6 scroll-smooth ${showAssessment ? 'pb-40 lg:pb-6' : ''}`}>
@@ -1328,23 +1403,22 @@ const App: React.FC = () => {
                 initial={{ width: 0, opacity: 0, x: 20 }}
                 animate={{ width: 420, opacity: 1, x: 0 }}
                 exit={{ width: 0, opacity: 0, x: 20 }}
-                className="hidden lg:flex flex-col min-h-0 overflow-hidden shrink-0"
+                className="hidden lg:flex flex-col shrink-0 overflow-hidden bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm"
                 aria-label="Assessment panel"
               >
-                <div className="w-[420px] h-full flex flex-col min-h-0">
-                  <div className="flex items-center justify-between px-1 pb-2 shrink-0">
+                <div className="w-[420px] flex flex-col h-full">
+                  <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 dark:border-slate-800">
                     <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Assessment</span>
                     <button
                       onClick={() => setShowAssessment(false)}
-                      className="h-9 flex items-center gap-1.5 px-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold transition-all shadow-sm"
+                      className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
                       aria-label="Collapse assessment panel"
-                      title="Collapse assessment"
+                      title="Collapse sidebar"
                     >
                       <ChevronsRight size={16} />
-                      <span>Hide</span>
                     </button>
                   </div>
-                  <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+                  <div className="flex-1 min-h-0 overflow-y-auto p-3">
                     <AssessmentPanel assessment={assessment} hasData={hasAssessmentData} duration={duration} avgWpm={avgWpm} fillerTotal={fillerTotal} turns={userTurns} streak={streak} xp={xp} mode={session.mode} />
                   </div>
                 </div>
