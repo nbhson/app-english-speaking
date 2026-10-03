@@ -635,9 +635,11 @@ const App: React.FC = () => {
         }
         const hadBuffer = speechBufferRef.current.trim().length > 0;
         if (finalChunk.trim()) {
+          // Final replaces its interim preview — clear stale interim to avoid
+          // "hello how are you hello how are you" duplication.
           speechBufferRef.current = `${speechBufferRef.current} ${finalChunk}`.trim();
-        }
-        if (interimChunk.trim()) {
+          interimRef.current = interimChunk.trim();
+        } else if (interimChunk.trim()) {
           interimRef.current = interimChunk.trim();
         }
         // New speech started a turn — mark turn start once per utterance.
