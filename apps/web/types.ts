@@ -35,6 +35,7 @@ export interface TranscriptionEntry {
   assessment?: Partial<SessionAssessment>; // Optional assessment update
   wpm?: number; // measured speaking speed for user turns
   fillerCount?: number; // filler words detected in user turns
+  error?: boolean; // connection failure marker — excluded from context & saved transcripts
 }
 
 export interface SpeechMetrics {

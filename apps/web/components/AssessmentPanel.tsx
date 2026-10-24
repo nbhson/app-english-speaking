@@ -30,7 +30,7 @@ export const AssessmentBar: React.FC<{ label: string; value: number }> = ({ labe
   return (
     <div className="flex items-center gap-2 sm:gap-4">
       <div className="w-24 sm:w-36 md:w-48 text-right shrink-0">
-        <span className="text-[10px] sm:text-[11px] font-bold text-[#2D8A82] dark:text-[#4ade80] uppercase tracking-wider leading-tight block">
+        <span className="text-[10px] sm:text-[11px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-wider leading-tight block">
           {label}
         </span>
       </div>
@@ -45,7 +45,7 @@ export const AssessmentBar: React.FC<{ label: string; value: number }> = ({ labe
         <div
           className="absolute inset-0 opacity-20"
           style={{
-            backgroundImage: `radial-gradient(#2D8A82 1px, transparent 1px)`,
+            backgroundImage: 'radial-gradient(var(--color-teal-600) 1px, transparent 1px)',
             backgroundSize: '4px 4px',
           }}
         />
@@ -53,7 +53,7 @@ export const AssessmentBar: React.FC<{ label: string; value: number }> = ({ labe
           initial={{ width: 0 }}
           animate={{ width: `${percentage}%` }}
           transition={{ duration: 1, ease: 'easeOut' }}
-          className="absolute inset-y-0 left-0 bg-[#2D8A82] dark:bg-[#2D8A82]"
+          className="absolute inset-y-0 left-0 bg-teal-600 dark:bg-teal-400"
         />
       </div>
       <div className="w-8">
@@ -83,7 +83,7 @@ export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, ha
   return (
   <div className="flex flex-col h-full p-1 sm:p-2 transition-colors">
     <h3 className="text-base sm:text-lg font-bold mb-3 sm:mb-4 flex items-center gap-2 text-slate-800 dark:text-white">
-      <span className="text-[#2D8A82]" aria-hidden>
+      <span className="text-teal-600 dark:text-teal-400" aria-hidden>
         📊
       </span>{' '}
       Session Statistics
@@ -104,12 +104,13 @@ export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, ha
       <SessionStat icon="💪" label="Confidence" value={assessment.confidenceLevel} unit="%" />
     </div>
 
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4 text-center">
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4 text-center">
       {[
         { l: 'WPM', v: avgWpm > 0 ? `${avgWpm}${paceNote}` : '—', t: mode === AppMode.PRESENTATION ? 'Ideal 130-160 WPM' : 'Speaking pace (words/min)' },
         { l: 'Fillers', v: `${fillerTotal}`, t: 'um/uh/like count' },
         { l: 'Turns', v: `${turns}`, t: 'Your spoken turns' },
-        { l: `🔥 ${streak}`, v: `${xp}XP`, t: 'Streak + total XP' },
+        { l: '🔥 Streak', v: `${streak}`, t: 'Chuỗi ngày học liên tiếp' },
+        { l: '⚡ XP', v: `${xp}`, t: 'Tổng XP đã tích lũy' },
       ].map((s) => (
         <div key={s.l} title={s.t} className="bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-xl py-2 px-1">
           <div className="text-[10px] font-bold text-slate-400 uppercase">{s.l}</div>

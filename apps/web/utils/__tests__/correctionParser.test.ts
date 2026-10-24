@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCorrectionFields, parseCorrectionBlock } from '../storage';
+import { parseCorrectionFields, parseCorrectionBlock } from '../aiBlocks';
 
 describe('parseCorrectionFields', () => {
   it('parses plain labels', () => {

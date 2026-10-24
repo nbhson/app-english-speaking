@@ -3,7 +3,7 @@ import { Volume2, BookmarkPlus, Check } from 'lucide-react';
 import type { AIConfig, WordInfo } from '../utils/api';
 import { translateWord } from '../utils/api';
 import { translationCache, getInflight, setInflight } from '../utils/translationCache';
-import { speakWordFireAndForget } from '../utils/tts';
+import { speakAmbient, stopAmbient } from '../utils/tts';
 import { saveVocab } from '../utils/storage';
 import { mirrorVocab } from '../utils/serverStore';
 
@@ -17,6 +17,8 @@ export const HoverableWord: React.FC<Props> = ({ word, config }) => {
   const [data, setData] = useState<WordInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
+  // Horizontal nudge so the tooltip never clips at viewport edges.
+  const [tooltipShift, setTooltipShift] = useState(0);
   const hoverTimeout = useRef<number | null>(null);
   const reqIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -24,10 +26,26 @@ export const HoverableWord: React.FC<Props> = ({ word, config }) => {
   useEffect(() => () => {
     if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
     abortRef.current?.abort();
+    stopAmbient();
   }, []);
 
   const cleanWord = word.replace(/[^\w]/g, '').toLowerCase();
   const isActuallyAWord = cleanWord.length > 0;
+
+  /** Compute a translateX offset that keeps the fixed-width tooltip on screen. */
+  const measureTooltipShift = (target: HTMLElement) => {
+    if (typeof window === 'undefined') return 0;
+    const tooltipWidth = Math.min(window.innerWidth * 0.7, 224); // w-56
+    const margin = 8;
+    const anchor = target.getBoundingClientRect();
+    const centerX = anchor.left + anchor.width / 2;
+    const left = centerX - tooltipWidth / 2;
+    if (left < margin) return margin - centerX;
+    if (left + tooltipWidth > window.innerWidth - margin) {
+      return window.innerWidth - margin - tooltipWidth / 2 - centerX;
+    }
+    return 0;
+  };
 
   const fetchTranslation = async () => {
     if (!cleanWord) return;
@@ -62,8 +80,9 @@ export const HoverableWord: React.FC<Props> = ({ word, config }) => {
     }
   };
 
-  const handleMouseEnter = () => {
+  const handleMouseEnter = (e: React.MouseEvent<HTMLSpanElement>) => {
     if (!isActuallyAWord) return;
+    setTooltipShift(measureTooltipShift(e.currentTarget));
     hoverTimeout.current = window.setTimeout(() => {
       setShowTooltip(true);
       void fetchTranslation();
@@ -80,14 +99,20 @@ export const HoverableWord: React.FC<Props> = ({ word, config }) => {
     setShowTooltip(false);
   };
 
-  const handleFocus = () => {
+  const handleFocus = (e: React.FocusEvent<HTMLSpanElement>) => {
     if (!isActuallyAWord) return;
+    setTooltipShift(measureTooltipShift(e.currentTarget));
     setShowTooltip(true);
     void fetchTranslation();
   };
 
   const handleBlur = () => {
     setShowTooltip(false);
+    setTooltipShift(0);
+    if (hoverTimeout.current) {
+      clearTimeout(hoverTimeout.current);
+      hoverTimeout.current = null;
+    }
   };
 
   if (!isActuallyAWord) return <span>{word}</span>;
@@ -102,10 +127,14 @@ export const HoverableWord: React.FC<Props> = ({ word, config }) => {
       tabIndex={0}
       role="button"
       aria-label={`Translate word ${word}`}
+      lang="en"
     >
       {word}
       {showTooltip && (
-        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-56 max-w-[70vw] animate-in fade-in zoom-in duration-200">
+        <span
+          className="absolute bottom-full mb-2 z-50 w-56 max-w-[70vw] animate-in fade-in zoom-in duration-200"
+          style={{ left: '50%', transform: `translateX(calc(-50% + ${tooltipShift}px))` }}
+        >
           <span className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-2xl rounded-2xl p-4 text-slate-800 dark:text-slate-200 text-xs block">
             {loading ? (
               <span className="flex items-center space-x-2 py-1">
@@ -123,7 +152,7 @@ export const HoverableWord: React.FC<Props> = ({ word, config }) => {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        speakWordFireAndForget(config, word);
+                        speakAmbient(config, word);
                       }}
                       className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full text-slate-400 hover:text-blue-600 transition-colors"
                       aria-label={`Listen to pronunciation of ${word}`}

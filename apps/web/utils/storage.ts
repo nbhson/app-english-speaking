@@ -4,7 +4,8 @@
 import type { AIConfig } from './api';
 import { DEFAULT_CONFIG } from './api';
 import { scheduleNextReview } from './srs';
-import type { AppMode, MistakeEntry, ProgressDay, SessionRecord, TranscriptionEntry, VocabEntry } from '../types';
+import type { MistakeEntry, ProgressDay, SessionRecord, TranscriptionEntry, VocabEntry } from '../types';
+import { uid } from './uid';
 
 const K = {
   sessions: 'fluentdev-sessions-v1',
@@ -34,7 +35,6 @@ function write(key: string, val: unknown): void {
   }
 }
 
-export const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 export const todayKey = (d = new Date()) => d.toISOString().slice(0, 10);
 
 // --- Sessions ---
@@ -220,36 +220,8 @@ export function getActiveProfileId(): string {
   }
 }
 
-export function cleanCorrectionValue(v: string): string {
-  return v.trim().replace(/^\*\*|\*\*$/g, '').replace(/^"|"$/g, '').replace(/^_([^_]+)_$/, '$1').trim();
-}
-
-function normalizeCorrectionLine(line: string): string {
-  return line
-    .trim()
-    .replace(/^(?:[-*•>]|\d+[.)])\s+/, '')
-    .replace(/^\*\*([^*:]+?)\s*:?\s*\*\*:?\s*/, '$1: ')
-    .replace(/^__([^_:]+?)\s*:?\s*__:?\s*/, '$1: ')
-    .trim();
-}
-
-export function parseCorrectionFields(content: string): { original: string; corrected: string; alternative: string; explanation: string } {
-  const out = { original: '', corrected: '', alternative: '', explanation: '' };
-  for (const raw of content.split('\n')) {
-    const line = normalizeCorrectionLine(raw);
-    const m = line.match(/^(original|corrected|alternative|explanation)\s*:\s*(.*)$/i);
-    if (!m) continue;
-    const key = m[1].toLowerCase() as keyof typeof out;
-    if (!out[key]) out[key] = cleanCorrectionValue(m[2]);
-  }
-  return out;
-}
-
-export function parseCorrectionBlock(content: string): { original: string; corrected: string; alternative: string; explanation: string } | null {
-  const { original, corrected, alternative, explanation } = parseCorrectionFields(content);
-  if (!original && !corrected) return null;
-  return { original, corrected, alternative, explanation };
-}
+// Correction field parsing lives in ./aiBlocks.ts (single source of truth for
+// the machine-parsable [Correction]/[Assessment]/[Insight] blocks).
 
 // --- Full Library backup (export/import JSON) ---
 export interface LibraryBackup {
@@ -339,5 +311,3 @@ export function exportAnkiTSV(): string {
   }
   return lines.join('\n');
 }
-
-export type { AppMode };

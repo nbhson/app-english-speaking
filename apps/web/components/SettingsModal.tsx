@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { AIConfig, DEFAULT_CONFIG, saveConfig, chatOnce, speech } from '../utils/api';
+import React, { useEffect, useState, useRef } from 'react';
+import { AIConfig, DEFAULT_CONFIG, saveConfig, chatOnce } from '../utils/api';
 import { X, Save, RotateCcw, Plug, Mic, Volume2, MessageSquare, Play, Loader2, User, SlidersHorizontal, FileText, Layers, Wifi } from 'lucide-react';
 import { englishVoices } from '../utils/browser';
 import { getProfiles, saveProfiles, getActiveProfileId, type NamedProfile } from '../utils/storage';
-import { uid } from '../utils/storage';
+import { uid } from '../utils/uid';
+import { speakPreview } from '../utils/tts';
+import { useModalFocus } from '../hooks/useModalFocus';
 
 const MODEL_SUGGESTIONS = [
   'gemini/gemini-3-flash-preview',
@@ -67,18 +69,13 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
   const [profiles, setProfiles] = useState<NamedProfile[]>(() => getProfiles());
   const [activeId, setActiveId] = useState(() => getActiveProfileId());
   const [newName, setNewName] = useState('');
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  // Focus trap + Escape + body scroll lock + focus restore (a11y)
+  useModalFocus(dialogRef, onClose);
 
   const set = <K extends keyof AIConfig>(key: K, value: AIConfig[K]) =>
     setCfg(prev => ({ ...prev, [key]: value }));
-
-  // Esc to close + basic focus trap (a11y)
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
 
   useEffect(() => {
     const load = () => setBrowserVoices(englishVoices().length ? englishVoices() : []);
@@ -119,22 +116,7 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
     setTestingVoice(true);
     setTestVoiceError(null);
     try {
-      if (cfg.ttsEngine === 'custom') {
-        const blob = await speech(cfg, 'Hello! Today we will practice your English speaking skills. This is a voice preview.');
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audio.onended = () => URL.revokeObjectURL(url);
-        await audio.play();
-      } else if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance('Hello! Today we will practice your English speaking skills.');
-        u.lang = 'en-US';
-        u.rate = cfg.ttsRate ?? 1;
-        u.pitch = cfg.ttsPitch ?? 1;
-        const v = browserVoices.find((x) => x.voiceURI === cfg.ttsVoiceURI || x.name === cfg.ttsVoiceURI);
-        if (v) u.voice = v;
-        window.speechSynthesis.speak(u);
-      }
+      await speakPreview('Hello! Today we will practice your English speaking skills. This is a voice preview.', cfg);
     } catch (e) {
       setTestVoiceError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -178,7 +160,7 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
 
   return (
     <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="AI Connection Settings">
-      <div className="w-full sm:max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[90vh] flex flex-col animate-in fade-in zoom-in duration-200 overflow-hidden">
+      <div ref={dialogRef} tabIndex={-1} className="w-full sm:max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[90vh] flex flex-col animate-in fade-in zoom-in duration-200 overflow-hidden focus:outline-none">
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">

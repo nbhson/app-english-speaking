@@ -16,7 +16,8 @@ import {
   migrateLocalToServer, pendingCount, flushPendingQueue,
 } from '../utils/serverStore';
 import { isDue, dueInLabel } from '../utils/srs';
-import { speakWordFireAndForget } from '../utils/tts';
+import { speakAmbient } from '../utils/tts';
+import { useModalFocus } from '../hooks/useModalFocus';
 
 interface Props {
   config: AIConfig;
@@ -43,7 +44,10 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
   });
   const [importError, setImportError] = useState<string | null>(null);
   const [dueOnly, setDueOnly] = useState(false);
+  // Two-step inline confirm for destructive clear (replaces window.confirm)
+  const [confirmClear, setConfirmClear] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const streak = getStreak();
   const xp = totalXP();
 
@@ -56,13 +60,8 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
     }
   };
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // Focus trap + Escape + body scroll lock + focus restore (a11y)
+  useModalFocus(dialogRef, onClose);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,7 +106,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
 
   return (
     <div className="fixed inset-0 z-[150] flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="My Learning Library">
-      <div className="w-full sm:max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[88vh] flex flex-col overflow-hidden">
+      <div ref={dialogRef} tabIndex={-1} className="w-full sm:max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[88vh] flex flex-col overflow-hidden focus:outline-none">
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-bold dark:text-white">📚 My Learning Library</h2>
@@ -151,10 +150,21 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
               {sessions.length === 0 && <p className="text-sm text-slate-400">Chưa có session nào. Học xong 1 buổi sẽ tự lưu ở đây.</p>}
               <div className="flex flex-wrap items-center gap-3">
                 <button
-                  onClick={() => { if (confirm('Xóa toàn bộ lịch sử?')) { clearSessions(); mirrorClearSessions(); bump(); } }}
-                  className="text-[11px] font-bold text-slate-400 hover:text-red-500"
+                  onClick={() => {
+                    if (confirmClear) {
+                      clearSessions();
+                      mirrorClearSessions();
+                      setConfirmClear(false);
+                      bump();
+                    } else {
+                      setConfirmClear(true);
+                      setTimeout(() => setConfirmClear(false), 4000);
+                    }
+                  }}
+                  className={`text-[11px] font-bold transition-colors ${confirmClear ? 'text-white bg-red-600 px-2 py-1 rounded-lg' : 'text-slate-400 hover:text-red-500'}`}
+                  title={confirmClear ? 'Bấm lần nữa để xác nhận' : 'Xóa toàn bộ lịch sử (yêu cầu xác nhận)'}
                 >
-                  Clear all history
+                  {confirmClear ? '⚠️ Xóa thật? Bấm lần nữa' : 'Clear all history'}
                 </button>
                 <span className="flex-1" />
                 <button
@@ -252,7 +262,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                   {m.alternative && <p className="text-sm italic text-blue-700 dark:text-blue-300">“{m.alternative}”</p>}
                   {m.explanation && <p className="text-[11px] text-slate-500 italic mt-1">Why: {m.explanation}</p>}
                   <div className="flex gap-2 mt-2 flex-wrap">
-                    <button onClick={() => speakWordFireAndForget(config, m.alternative || m.corrected)} className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500" title="Nghe lại" aria-label="Listen">
+                    <button onClick={() => speakAmbient(config, m.alternative || m.corrected)} className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500" title="Nghe lại" aria-label="Listen">
                       <Volume2 size={13} />
                     </button>
                     {onPractice && (
@@ -293,7 +303,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                       {v.example && <p className="text-[11px] italic text-slate-500 truncate">“{v.example}”</p>}
                       <p className="text-[10px] text-slate-400 mt-0.5">{dueInLabel(v.nextReview)}{v.reviewCount > 0 ? ` · reviewed ${v.reviewCount}x` : ''}</p>
                     </div>
-                    <button onClick={() => speakWordFireAndForget(config, v.word)} className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500" aria-label={`Listen ${v.word}`}>
+                    <button onClick={() => speakAmbient(config, v.word)} className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500" aria-label={`Listen ${v.word}`}>
                       <Volume2 size={13} />
                     </button>
                     {onPractice && (

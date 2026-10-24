@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -27,6 +28,7 @@
 }
 
 :root {
+  color-scheme: light;
   --slate-50: 248 250 252;
   --slate-100: 241 245 249;
   --slate-200: 226 232 240;
@@ -51,6 +53,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --slate-50: 250 250 250;
   --slate-100: 245 245 245;
   --slate-200: 229 229 229;

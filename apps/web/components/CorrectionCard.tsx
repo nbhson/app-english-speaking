@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Volume2, Copy, Check } from 'lucide-react';
 import { useAIConfig } from '../context/AIConfigContext';
-import { speakWordFireAndForget } from '../utils/tts';
-import { parseCorrectionFields } from '../utils/storage';
+import { speakAmbient } from '../utils/tts';
+import { parseCorrectionFields } from '../utils/aiBlocks';
 
 interface Props {
   content: string;
@@ -55,7 +55,7 @@ export const CorrectionCard: React.FC<Props> = ({ content }) => {
         {corrected && (
           <div className="space-y-1">
             <span className="text-[10px] font-bold text-green-500 dark:text-green-400 uppercase">Corrected</span>
-            <p className="text-slate-800 dark:text-slate-200 font-medium">{corrected}</p>
+            <p className="text-slate-800 dark:text-slate-200 font-medium" lang="en">{corrected}</p>
           </div>
         )}
         {alternative && (
@@ -65,7 +65,7 @@ export const CorrectionCard: React.FC<Props> = ({ content }) => {
                 Better Alternative
               </span>
               <button
-                onClick={() => speakWordFireAndForget(config, alternative)}
+                onClick={() => speakAmbient(config, alternative)}
                 className="p-1 hover:bg-blue-100 dark:hover:bg-blue-800 rounded-lg text-blue-400 dark:text-blue-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                 aria-label={`Listen to alternative: ${alternative}`}
                 title="Listen to alternative"
@@ -73,7 +73,7 @@ export const CorrectionCard: React.FC<Props> = ({ content }) => {
                 <Volume2 size={14} />
               </button>
             </div>
-            <p className="text-blue-900 dark:text-blue-200 font-semibold italic">"{alternative}"</p>
+            <p className="text-blue-900 dark:text-blue-200 font-semibold italic" lang="en">"{alternative}"</p>
           </div>
         )}
         {explanation && (

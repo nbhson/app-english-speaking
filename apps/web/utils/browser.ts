@@ -1,23 +1,8 @@
-// Browser capability helpers: STT support, TTS voices, PWA/mobile hints.
+// Browser capability helpers: STT support, TTS voices.
 
 export function isBrowserSTTSupported(): boolean {
   if (typeof window === 'undefined') return false;
   return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
-}
-
-export function isIOS(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as unknown as { MSStream?: unknown }).MSStream;
-}
-
-export function isFirefox(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  return /firefox/i.test(navigator.userAgent);
-}
-
-export function needsPushToTalk(): boolean {
-  // Web Speech API is missing on Safari iOS + Firefox -> force custom STT path
-  return !isBrowserSTTSupported();
 }
 
 export function listBrowserVoices(): SpeechSynthesisVoice[] {

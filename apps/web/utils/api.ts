@@ -22,8 +22,17 @@ export interface AIConfig {
   systemPromptOverride?: string; // full override of SYSTEM_INSTRUCTION
 }
 
+/** Read an optional Vite env var without depending on vite/client types. */
+function viteEnv(key: string): string | undefined {
+  const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+  const value = env?.[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+const ENV_BASE_URL = viteEnv('VITE_DEFAULT_BASE_URL');
+
 export const DEFAULT_CONFIG: AIConfig = {
-  baseUrl: 'http://localhost:20128/v1',
+  baseUrl: ENV_BASE_URL || 'http://localhost:20128/v1',
   apiKey: '',
   model: 'gemini/gemini-3-flash-preview',
   sttEngine: 'browser',
@@ -168,6 +177,9 @@ export async function chatStream(
       /* ignore */
     }
   }
+  // The stream may close cleanly after an abort (server/undici close-on-abort).
+  // That must still surface as an AbortError, never as a "complete" reply.
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
   return full;
 }
 
@@ -207,12 +219,13 @@ export async function transcribe(config: AIConfig, blob: Blob): Promise<string> 
 }
 
 /** TTS through custom provider (/v1/audio/speech) — returns the audio blob. */
-export async function speech(config: AIConfig, text: string): Promise<Blob> {
+export async function speech(config: AIConfig, text: string, signal?: AbortSignal): Promise<Blob> {
   const url = `${baseUrl(config)}/audio/speech`;
   const res = await fetch(url, {
     method: 'POST',
     headers: buildHeaders(config),
     body: JSON.stringify({ model: config.ttsModel, input: text, voice: config.ttsVoice }),
+    signal,
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => '');

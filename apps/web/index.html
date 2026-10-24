@@ -9,6 +9,19 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>FluentDev AI Coach</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      // Apply the saved theme class before first paint (prevents light-mode flash
+      // for dark-mode users). Mirrors the logic in App.tsx useDarkMode state.
+      (function () {
+        try {
+          var saved = localStorage.getItem('theme');
+          var dark = saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) document.documentElement.classList.add('dark');
+        } catch (e) {
+          /* ignore */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

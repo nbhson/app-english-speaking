@@ -300,7 +300,7 @@ ai-english-speaking-coach/
 | `npm run dev` | Chạy dev server (Vite) tại `http://localhost:8240` |
 | `npm run build` | Build production ra `dist/` |
 | `npm run preview` | Xem trước bản build |
-| `npm run lint` | Kiểm tra type TypeScript (`tsc --noEmit`) |
+| `npm run lint` | ESLint (0 errors, tối đa 10 warnings) |
 
 ---
 

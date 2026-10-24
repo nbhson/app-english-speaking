@@ -26,15 +26,36 @@ app.use(express.json({ limit: '5mb' }));
 
 const bool = (v) => (v ? 1 : 0);
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, db: DB_PATH }));
-
-// ---------- Sessions (+ embedded messages) ----------
+app.get('/api/health', (_req, res) => res.json({ ok: true, db: DB_PATH }));// ---------- Sessions (+ embedded messages) ----------
 app.get('/api/sessions', (req, res) => {
   const limit = Math.min(Number(req.query.limit || 100), 500);
   const sessions = db
     .prepare('SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?')
     .all(limit);
-  const byId = db.prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC');
+  // Fetch all messages for the page in ONE query (keeps payload flat, avoids N+1).
+  const messagesBySession = new Map();
+  if (sessions.length > 0) {
+    const placeholders = sessions.map(() => '?').join(',');
+    const rows = db
+      .prepare(
+        `SELECT * FROM messages WHERE session_id IN (${placeholders}) ORDER BY created_at ASC`,
+      )
+      .all(...sessions.map((s) => s.id));
+    for (const m of rows) {
+      const list = messagesBySession.get(m.session_id);
+      if (list) list.push(m);
+      else messagesBySession.set(m.session_id, [m]);
+    }
+  }
+  const toMessage = (m) => ({
+    id: m.id,
+    role: m.role,
+    text: m.text,
+    timestamp: m.created_at,
+    ...(m.suggestion ? { suggestion: m.suggestion } : {}),
+    ...(m.wpm != null ? { wpm: m.wpm } : {}),
+    ...(m.filler_count != null ? { fillerCount: m.filler_count } : {}),
+  });
   res.json(
     sessions.map((s) => ({
       id: s.id,
@@ -47,15 +68,7 @@ app.get('/api/sessions', (req, res) => {
       avgScore: s.avg_score,
       vocabPoints: s.vocab_points,
       confidence: s.confidence,
-      transcript: byId.all(s.id).map((m) => ({
-        id: m.id,
-        role: m.role,
-        text: m.text,
-        timestamp: m.created_at,
-        ...(m.suggestion ? { suggestion: m.suggestion } : {}),
-        ...(m.wpm != null ? { wpm: m.wpm } : {}),
-        ...(m.filler_count != null ? { fillerCount: m.filler_count } : {}),
-      })),
+      transcript: (messagesBySession.get(s.id) ?? []).map(toMessage),
     })),
   );
 });
@@ -64,28 +77,32 @@ app.post('/api/sessions', (req, res) => {
   const s = req.body || {};
   if (!s.startedAt) return res.status(400).json({ error: 'startedAt required' });
   const id = s.id || uid();
-  db.prepare(
+  const transcript = Array.isArray(s.transcript) ? s.transcript : [];
+  const insSession = db.prepare(
     `INSERT INTO sessions (id, mode, started_at, ended_at, duration_sec, turns, corrections, avg_score, vocab_points, confidence)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    s.mode || 'daily',
-    s.startedAt,
-    s.endedAt || Date.now(),
-    s.durationSec || 0,
-    s.turns || 0,
-    s.corrections || 0,
-    s.avgScore || 0,
-    s.vocabPoints || 0,
-    s.confidence || 0,
   );
   const insMsg = db.prepare(
     `INSERT INTO messages (id, session_id, role, text, suggestion, wpm, filler_count, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
+  // Session + messages go in atomically: a failed message insert must not leave
+  // an empty session row behind.
   db.exec('BEGIN');
   try {
-    for (const m of s.transcript || []) {
+    insSession.run(
+      id,
+      s.mode || 'daily',
+      s.startedAt,
+      s.endedAt || Date.now(),
+      s.durationSec || 0,
+      s.turns || 0,
+      s.corrections || 0,
+      s.avgScore || 0,
+      s.vocabPoints || 0,
+      s.confidence || 0,
+    );
+    for (const m of transcript) {
       insMsg.run(
         m.id || uid(),
         id,
@@ -240,4 +257,13 @@ app.post('/api/progress/log', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`[library-api] listening on http://localhost:${PORT} (db: ${DB_PATH})`);
+});
+
+// JSON error handler — must be registered last. Gives clients a predictable
+// { error } payload instead of Express's HTML/stack-trace 500.
+// eslint-disable-next-line no-unused-vars
+app.use((err, _req, res, _next) => {
+  console.error('[library-api] unhandled error:', err && err.message ? err.message : err);
+  const status = err && err.status ? err.status : 500;
+  res.status(status).json({ error: err && err.message ? String(err.message) : 'Internal server error' });
 });

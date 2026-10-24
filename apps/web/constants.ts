@@ -112,11 +112,3 @@ export const PERSONA_PROMPT: Record<string, string> = {
   strict: 'Tone: strict coach, direct, push for precision, point out every repeated mistake.',
   professional: 'Tone: professional mentor, concise, agenda-driven, business-like.',
 };
-
-export const MODE_INFO = {
-  daily: { title: 'Daily Conversation', icon: '🏠', prompt: 'How has your day been? Let\'s chat casually.' },
-  meeting: { title: 'Business Meeting', icon: '💼', prompt: 'Welcome to the meeting. We\'re discussing the new architectural plan. What\'s your take?' },
-  presentation: { title: 'Presentation Skills', icon: '📊', prompt: 'It\'s time for your tech demo. Please start presenting your project.' },
-  custom: { title: 'Custom Class', icon: '🎓', prompt: 'Tell me what you want to learn today — I will teach it like a teacher: explain, give examples, then drill you.' },
-  translate: { title: 'VN to EN Helper', icon: '🇻🇳', prompt: 'Hãy nói bằng tiếng Việt những gì bạn muốn diễn đạt, mình sẽ gợi ý cách nói tiếng Anh tự nhiên nhất.' },
-};
