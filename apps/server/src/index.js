@@ -25,10 +25,15 @@ app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
 const bool = (v) => (v ? 1 : 0);
+// Coerce user input to a finite integer; SQLite throws on NaN bindings.
+const intOr = (v, fallback) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.trunc(n) : fallback;
+};
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, db: DB_PATH }));// ---------- Sessions (+ embedded messages) ----------
 app.get('/api/sessions', (req, res) => {
-  const limit = Math.min(Number(req.query.limit || 100), 500);
+  const limit = Math.min(intOr(req.query.limit, 100), 500);
   const sessions = db
     .prepare('SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?')
     .all(limit);
@@ -228,7 +233,9 @@ app.get('/api/progress', (_req, res) => {
 });
 
 app.post('/api/progress/log', (req, res) => {
-  const { durationSec = 0, xp = 0 } = req.body || {};
+  const b = req.body || {};
+  const durationSec = intOr(b.durationSec, 0);
+  const xp = intOr(b.xp, 0);
   const date = new Date().toISOString().slice(0, 10);
   const cur = db.prepare('SELECT * FROM progress_days WHERE date = ?').get(date);
   if (cur) {
@@ -255,8 +262,23 @@ app.post('/api/progress/log', (req, res) => {
   res.json({ streak });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`[library-api] listening on http://localhost:${PORT} (db: ${DB_PATH})`);
+});
+// Surface port-in-use etc. as a readable message instead of a raw stack trace.
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`[library-api] port ${PORT} is already in use. Set PORT=<other> and retry.`);
+  } else {
+    console.error('[library-api] server error:', err && err.message ? err.message : err);
+  }
+  process.exitCode = 1;
+});
+
+// Safety net: log stray async failures instead of letting Node's default
+// (crash on unhandled rejection) take down `node --watch` mid-session.
+process.on('unhandledRejection', (reason) => {
+  console.error('[library-api] unhandled rejection:', reason instanceof Error ? reason.message : reason);
 });
 
 // JSON error handler — must be registered last. Gives clients a predictable
