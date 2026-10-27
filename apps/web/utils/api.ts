@@ -4,6 +4,8 @@
 // base URL. Defaults point at a local custom provider gateway. The chat model is the
 // "brain"; STT/TTS can run on the browser (Web Speech API) or through the custom provider.
 
+import { DEFAULT_BASE_URL } from './config';
+
 export interface AIConfig {
   baseUrl: string;        // e.g. http://localhost:20128/v1
   apiKey: string;         // Bearer token (may be empty on local custom provider)
@@ -22,17 +24,8 @@ export interface AIConfig {
   systemPromptOverride?: string; // full override of SYSTEM_INSTRUCTION
 }
 
-/** Read an optional Vite env var without depending on vite/client types. */
-function viteEnv(key: string): string | undefined {
-  const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
-  const value = env?.[key];
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-const ENV_BASE_URL = viteEnv('VITE_DEFAULT_BASE_URL');
-
 export const DEFAULT_CONFIG: AIConfig = {
-  baseUrl: ENV_BASE_URL || 'http://localhost:20128/v1',
+  baseUrl: DEFAULT_BASE_URL,
   apiKey: '',
   model: 'gemini/gemini-3-flash-preview',
   sttEngine: 'browser',

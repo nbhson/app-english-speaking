@@ -8,6 +8,7 @@ import type {
   SessionRecord,
   VocabEntry,
 } from '../types';
+import { LIBRARY_API_URL } from './config';
 import {
   getSessions,
   getMistakes,
@@ -15,9 +16,7 @@ import {
   getProgress,
 } from './storage';
 
-const BASE =
-  (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_LIBRARY_API ||
-  'http://localhost:8241';
+const BASE = LIBRARY_API_URL;
 
 let available: boolean | null = null;
 let availableAt = 0;

@@ -208,7 +208,7 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
             </h3>
             <div className="space-y-3">
               <Field label="Base URL" hint="OpenAI-compatible endpoint, e.g. https://api.openai.com/v1">
-                <input className={inputCls} value={cfg.baseUrl} onChange={e => set('baseUrl', e.target.value)} placeholder="http://localhost:20128/v1" />
+                <input className={inputCls} value={cfg.baseUrl} onChange={e => set('baseUrl', e.target.value)} placeholder={DEFAULT_CONFIG.baseUrl} />
               </Field>
               <Field label="API Key" hint="Bearer token. Leave empty if your gateway doesn't require one.">
                 <input className={inputCls} type="password" value={cfg.apiKey} onChange={e => set('apiKey', e.target.value)} placeholder="sk-... (optional)" />
