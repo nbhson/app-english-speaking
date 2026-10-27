@@ -18,6 +18,10 @@ coverage
 # Monorepo: local SQLite data (schema stays tracked, DB doesn't)
 data/*.db*
 
+# Stray tooling output (kept on disk, never tracked)
+graphify-out/
+migrated_prompt_history/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
