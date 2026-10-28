@@ -6,12 +6,14 @@ import type {
   MistakeEntry,
   ProgressDay,
   SessionRecord,
+  TaskEntry,
   VocabEntry,
 } from '../types';
 import { LIBRARY_API_URL } from './config';
 import {
   getSessions,
   getMistakes,
+  getTasks,
   getVocab,
   getProgress,
 } from './storage';
@@ -170,6 +172,18 @@ export function mirrorDeleteVocab(id: string): void {
   mirrorOrQueue({ method: 'DELETE', path: `/api/vocab/${id}` });
 }
 
+export function mirrorTask(t: { title: string; description: string; dueAt?: number | null }): void {
+  mirrorOrQueue({ method: 'POST', path: '/api/tasks', body: t });
+}
+
+export function mirrorTaskCompleted(id: string, completed: boolean): void {
+  mirrorOrQueue({ method: 'PATCH', path: `/api/tasks/${id}`, body: { completed } });
+}
+
+export function mirrorDeleteTask(id: string): void {
+  mirrorOrQueue({ method: 'DELETE', path: `/api/tasks/${id}` });
+}
+
 export function mirrorClearSessions(): void {
   // Server giờ yêu cầu confirm tường minh cho bulk delete.
   mirrorOrQueue({ method: 'DELETE', path: '/api/sessions', body: { confirm: 'DELETE ALL' } });
@@ -259,20 +273,34 @@ export async function fetchProgress(): Promise<{ list: ProgressDay[]; remote: bo
   return { list: getProgress(), remote: false };
 }
 
+export async function fetchTasks(): Promise<{ list: TaskEntry[]; remote: boolean }> {
+  if (await serverAvailable()) {
+    try {
+      const r = await fetch(`${BASE}/api/tasks`);
+      if (r.ok) return { list: (await r.json()) as TaskEntry[], remote: true };
+    } catch {
+      /* fall through */
+    }
+  }
+  return { list: getTasks(), remote: false };
+}
+
 // One-time migration: push localStorage data into an empty server DB.
 export async function migrateLocalToServer(): Promise<boolean> {
   if (!(await serverAvailable())) return false;
   try {
-    const [sessions, mistakes, vocab] = await Promise.all([
+    const [sessions, mistakes, vocab, tasks] = await Promise.all([
       fetch(`${BASE}/api/sessions?limit=1`).then((r) => (r.ok ? r.json() : [])),
       fetch(`${BASE}/api/mistakes`).then((r) => (r.ok ? r.json() : [])),
       fetch(`${BASE}/api/vocab`).then((r) => (r.ok ? r.json() : [])),
+      fetch(`${BASE}/api/tasks`).then((r) => (r.ok ? r.json() : [])),
     ]);
-    if (sessions.length > 0 || mistakes.length > 0 || vocab.length > 0) return false;
+    if (sessions.length > 0 || mistakes.length > 0 || vocab.length > 0 || tasks.length > 0) return false;
     const localSessions = getSessions();
     const localMistakes = getMistakes();
     const localVocab = getVocab();
-    if (localSessions.length === 0 && localMistakes.length === 0 && localVocab.length === 0) {
+    const localTasks = getTasks();
+    if (localSessions.length === 0 && localMistakes.length === 0 && localVocab.length === 0 && localTasks.length === 0) {
       return false;
     }
     await Promise.all([
@@ -292,6 +320,13 @@ export async function migrateLocalToServer(): Promise<boolean> {
           translation: v.translation,
           ipa: v.ipa,
           example: v.example,
+        }).catch(() => {}),
+      ),
+      ...localTasks.map((t) =>
+        post('/api/tasks', {
+          title: t.title,
+          description: t.description,
+          dueAt: t.dueAt,
         }).catch(() => {}),
       ),
     ]);

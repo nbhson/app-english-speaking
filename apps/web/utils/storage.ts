@@ -4,7 +4,7 @@
 import type { AIConfig } from './api';
 import { DEFAULT_CONFIG } from './api';
 import { scheduleNextReview } from './srs';
-import type { MistakeEntry, ProgressDay, SessionRecord, TranscriptionEntry, VocabEntry } from '../types';
+import type { MistakeEntry, ProgressDay, SessionRecord, TaskEntry, TranscriptionEntry, VocabEntry } from '../types';
 import { uid } from './uid';
 
 const K = {
@@ -12,6 +12,7 @@ const K = {
   mistakes: 'fluentdev-mistakes-v1',
   vocab: 'fluentdev-vocab-v1',
   progress: 'fluentdev-progress-v1',
+  tasks: 'fluentdev-tasks-v1',
   profiles: 'fluentdev-profiles-v1',
   activeProfile: 'fluentdev-active-profile-v1',
   streak: 'fluentdev-streak-v1',
@@ -138,6 +139,32 @@ export function markVocabReviewed(id: string): VocabEntry[] {
   return next;
 }
 
+// --- Practice tasks (user-registered checklist) ---
+export function getTasks(): TaskEntry[] {
+  return read<TaskEntry[]>(K.tasks, []);
+}
+
+export function addTask(t: Omit<TaskEntry, 'id' | 'createdAt' | 'completed' | 'completedAt'>): TaskEntry[] {
+  const entry: TaskEntry = { ...t, id: uid(), createdAt: Date.now(), completed: false };
+  const next = [entry, ...getTasks()].slice(0, 200);
+  write(K.tasks, next);
+  return next;
+}
+
+export function setTaskCompleted(id: string, completed: boolean): TaskEntry[] {
+  const next = getTasks().map((t) =>
+    t.id === id ? { ...t, completed, completedAt: completed ? Date.now() : null } : t,
+  );
+  write(K.tasks, next);
+  return next;
+}
+
+export function deleteTask(id: string): TaskEntry[] {
+  const next = getTasks().filter((t) => t.id !== id);
+  write(K.tasks, next);
+  return next;
+}
+
 // --- Progress / streak / XP ---
 export function getProgress(): ProgressDay[] {
   return read<ProgressDay[]>(K.progress, []);
@@ -231,6 +258,7 @@ export interface LibraryBackup {
   mistakes: MistakeEntry[];
   vocab: VocabEntry[];
   progress: ProgressDay[];
+  tasks: TaskEntry[];
 }
 
 export function exportLibrary(): string {
@@ -241,6 +269,7 @@ export function exportLibrary(): string {
     mistakes: getMistakes(),
     vocab: getVocab(),
     progress: getProgress(),
+    tasks: getTasks(),
   };
   return JSON.stringify(backup, null, 2);
 }
@@ -257,13 +286,14 @@ function dedupeBy<T>(list: T[], key: (t: T) => string): T[] {
   return out;
 }
 
-export function importLibrary(json: string): { sessions: number; mistakes: number; vocab: number; progress: number } {
+export function importLibrary(json: string): { sessions: number; mistakes: number; vocab: number; progress: number; tasks: number } {
   const parsed = JSON.parse(json) as Partial<LibraryBackup>;
   if (!parsed || typeof parsed !== 'object') throw new Error('Invalid backup file');
   const sessions = Array.isArray(parsed.sessions) ? parsed.sessions : [];
   const mistakes = Array.isArray(parsed.mistakes) ? parsed.mistakes : [];
   const vocab = Array.isArray(parsed.vocab) ? parsed.vocab : [];
   const progress = Array.isArray(parsed.progress) ? parsed.progress : [];
+  const tasks = Array.isArray(parsed.tasks) ? parsed.tasks : [];
 
   const mergedSessions = dedupeBy(
     [...sessions, ...getSessions()]
@@ -296,16 +326,22 @@ export function importLibrary(json: string): { sessions: number; mistakes: numbe
   )
     .sort((a, b) => (a.date < b.date ? 1 : -1))
     .slice(0, 90);
+  const mergedTasks = dedupeBy(
+    [...tasks, ...getTasks()].filter((t) => t && typeof t.title === 'string'),
+    (t) => t.id,
+  ).slice(0, 200);
 
   write(K.sessions, mergedSessions);
   write(K.mistakes, mergedMistakes);
   write(K.vocab, mergedVocab);
   write(K.progress, mergedProgress);
+  write(K.tasks, mergedTasks);
   return {
     sessions: mergedSessions.length,
     mistakes: mergedMistakes.length,
     vocab: mergedVocab.length,
     progress: mergedProgress.length,
+    tasks: mergedTasks.length,
   };
 }
 

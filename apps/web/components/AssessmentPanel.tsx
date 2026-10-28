@@ -6,6 +6,7 @@ import { AppMode } from '../types';
 import { MODE_CONFIGS } from '../modes';
 import { deriveInsight } from '../utils/assessment';
 import { avgSkill, cefrFromAvg } from '../utils/speechMetrics';
+import { SkillRadar } from './SkillRadar';
 
 export const SessionStat: React.FC<{
   icon: string;
@@ -129,6 +130,12 @@ export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, ha
       </span>{' '}
       Comprehensive Assessment
     </h3>
+
+    {hasData && (
+      <div className="flex justify-center mb-4" aria-hidden>
+        <SkillRadar assessment={assessment} className="w-52 h-52 sm:w-64 sm:h-64 max-w-full" />
+      </div>
+    )}
 
     <div className="space-y-3 sm:space-y-4 flex-1">
       {!hasData ? (        <div className="h-full flex flex-col items-center justify-center text-center px-4">

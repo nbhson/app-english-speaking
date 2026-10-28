@@ -1,23 +1,26 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Trash2, Volume2, Download, Check, RotateCcw, GraduationCap, MessageCircle, Upload, FileJson, Clock, RefreshCw } from 'lucide-react';
+import { X, Trash2, Volume2, Download, Check, RotateCcw, GraduationCap, MessageCircle, Upload, FileJson, Clock, RefreshCw, Plus, Search } from 'lucide-react';
 import type { AIConfig } from '../utils/api';
 import type { AppMode } from '../types';
-import type { MistakeEntry, ProgressDay, SessionRecord, VocabEntry } from '../types';
+import type { MistakeEntry, ProgressDay, SessionRecord, TaskEntry, VocabEntry } from '../types';
 import {
   getSessions, clearSessions, transcriptToMarkdown, downloadText,
   getMistakes, markMistakeReviewed, deleteMistake,
   getVocab, deleteVocab, markVocabReviewed,
+  getTasks, addTask, setTaskCompleted, deleteTask,
   getProgress, getStreak, totalXP,
   exportLibrary, importLibrary, exportAnkiTSV,
 } from '../utils/storage';
 import {
-  fetchSessions, fetchMistakes, fetchVocab, fetchProgress,
+  fetchSessions, fetchMistakes, fetchVocab, fetchProgress, fetchTasks,
   mirrorClearSessions, mirrorMistakeReviewed, mirrorDeleteMistake, mirrorDeleteVocab,
+  mirrorTask, mirrorTaskCompleted, mirrorDeleteTask,
   migrateLocalToServer, pendingCount, flushPendingQueue,
 } from '../utils/serverStore';
 import { isDue, dueInLabel } from '../utils/srs';
 import { speakAmbient } from '../utils/tts';
 import { useModalFocus } from '../hooks/useModalFocus';
+import { useToast } from './Toast';
 
 interface Props {
   config: AIConfig;
@@ -25,7 +28,7 @@ interface Props {
   onPractice?: (mode: AppMode, prefill: string) => void;
 }
 
-type Tab = 'history' | 'mistakes' | 'vocab' | 'progress';
+type Tab = 'history' | 'mistakes' | 'vocab' | 'tasks' | 'progress';
 
 export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) => {
   const [tab, setTab] = useState<Tab>('history');
@@ -33,7 +36,12 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
   const [sessions, setSessions] = useState<SessionRecord[]>(() => getSessions());
   const [mistakes, setMistakes] = useState<MistakeEntry[]>(() => getMistakes());
   const [vocab, setVocab] = useState<VocabEntry[]>(() => getVocab());
+  const [tasks, setTasks] = useState<TaskEntry[]>(() => getTasks());
   const [progress, setProgress] = useState<ProgressDay[]>(() => getProgress());
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDue, setNewTaskDue] = useState('');
+  const [query, setQuery] = useState('');
+  const toast = useToast();
   const [remote, setRemote] = useState<boolean | null>(null);
   const [pending, setPending] = useState(() => {
     try {
@@ -50,6 +58,15 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const streak = getStreak();
   const xp = totalXP();
+
+  // Active-tab search filter — case-insensitive across the tab's text fields.
+  const q = query.trim().toLowerCase();
+  const matchQ = (s: string | undefined) => (s ?? '').toLowerCase().includes(q);
+  const fSessions = q === '' ? sessions : sessions.filter((s) => s.mode.toLowerCase().includes(q) || s.transcript.some((m) => m.text.toLowerCase().includes(q)));
+  const fMistakes = q === '' ? mistakes : mistakes.filter((m) => matchQ(m.original) || matchQ(m.corrected) || matchQ(m.explanation) || matchQ(m.alternative));
+  const fVocab = q === '' ? vocab : vocab.filter((v) => matchQ(v.word) || matchQ(v.translation) || matchQ(v.example));
+  const fTasks = q === '' ? tasks : tasks.filter((t) => matchQ(t.title) || matchQ(t.description));
+  const noResults = q !== '' && fSessions.length === 0 && fMistakes.length === 0 && fVocab.length === 0 && fTasks.length === 0;
 
   const bump = () => {
     setRefresh((v) => v + 1);
@@ -91,15 +108,16 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [s, m, v, p] = await Promise.all([
-        fetchSessions(), fetchMistakes(), fetchVocab(), fetchProgress(),
+      const [s, m, v, t, p] = await Promise.all([
+        fetchSessions(), fetchMistakes(), fetchVocab(), fetchTasks(), fetchProgress(),
       ]);
       if (cancelled) return;
       setSessions(s.list);
       setMistakes(m.list);
       setVocab(v.list);
+      setTasks(t.list);
       setProgress(p.list);
-      setRemote(s.remote || m.remote || v.remote || p.remote);
+      setRemote(s.remote || m.remote || v.remote || t.remote || p.remote);
     })();
     return () => { cancelled = true; };
   }, [tab, refresh]);
@@ -120,7 +138,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
             )}
             {pending > 0 && (
               <button
-                onClick={() => { void flushPendingQueue().then(() => bump()); }}
+                onClick={() => { void flushPendingQueue().then(() => { bump(); toast?.show('Đã đồng bộ thay đổi lên server', 'success'); }); }}
                 title={`${pending} thay đổi chưa sync lên server — bấm để retry`}
                 className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 flex items-center gap-1"
               >
@@ -133,7 +151,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
           </button>
         </div>
         <div className="flex gap-2 px-4 sm:px-6 pt-3 sm:pt-4 pb-1 flex-wrap shrink-0">
-          {([['history', '🕘 History'], ['mistakes', `🐞 Mistakes (${mistakes.length})`], ['vocab', `🔖 Vocab (${vocab.length})`], ['progress', `🔥 Progress · ${streak}d · ${xp}XP`]] as [Tab, string][]).map(([t, label]) => (
+          {([['history', '🕘 History'], ['mistakes', `🐞 Mistakes (${mistakes.length})`], ['vocab', `🔖 Vocab (${vocab.length})`], ['tasks', `✅ Tasks (${tasks.filter((t) => !t.completed).length})`], ['progress', `🔥 Progress · ${streak}d · ${xp}XP`]] as [Tab, string][]).map(([t, label]) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -144,10 +162,38 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
           ))}
         </div>
 
+        {/* Global search — filters the active tab's items (case-insensitive) */}
+        <div className="px-4 sm:px-6 pb-1 shrink-0">
+          <div className="relative">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Tìm trong Library… (session, lỗi, từ vựng, task)"
+              className="w-full text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-8 pr-8 py-2 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+              aria-label="Search library"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                aria-label="Clear search"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 py-3 sm:py-4 pb-[env(safe-area-inset-bottom)] space-y-3">
+          {noResults && (
+            <p className="text-sm text-slate-400 text-center py-6" role="status">
+              Không tìm thấy kết quả nào cho “{query}”.
+            </p>
+          )}
           {tab === 'history' && (
             <>
-              {sessions.length === 0 && <p className="text-sm text-slate-400">Chưa có session nào. Học xong 1 buổi sẽ tự lưu ở đây.</p>}
+              {fSessions.length === 0 && q === '' && <p className="text-sm text-slate-400">Chưa có session nào. Học xong 1 buổi sẽ tự lưu ở đây.</p>}
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={() => {
@@ -156,6 +202,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                       mirrorClearSessions();
                       setConfirmClear(false);
                       bump();
+                      toast?.show('Đã xóa toàn bộ lịch sử session');
                     } else {
                       setConfirmClear(true);
                       setTimeout(() => setConfirmClear(false), 4000);
@@ -200,10 +247,12 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                     const reader = new FileReader();
                     reader.onload = () => {
                       try {
-                        importLibrary(String(reader.result || ''));
+                        const stats = importLibrary(String(reader.result || ''));
                         bump();
+                        toast?.show(`Import thành công: ${stats.sessions} sessions · ${stats.mistakes} mistakes · ${stats.vocab} từ · ${stats.tasks} tasks`, 'success');
                       } catch (err) {
                         setImportError(err instanceof Error ? err.message : 'Import failed');
+                        toast?.show(`Import thất bại: ${err instanceof Error ? err.message : 'file không hợp lệ'}`, 'error');
                       }
                     };
                     reader.readAsText(f);
@@ -212,7 +261,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                 />
               </div>
               {importError && <p className="text-[11px] text-red-500">{importError}</p>}
-              {sessions.map((s) => (
+              {fSessions.map((s) => (
                 <div key={s.id} className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="text-sm font-bold dark:text-white">
@@ -233,11 +282,11 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
 
           {tab === 'mistakes' && (
             <>
-              {mistakes.length === 0 && <p className="text-sm text-slate-400">Chưa có lỗi nào. Mỗi [Correction] của Coach sẽ tự lưu vào đây để ôn.</p>}
-              {mistakes.length > 0 && (
+              {fMistakes.length === 0 && q === '' && <p className="text-sm text-slate-400">Chưa có lỗi nào. Mỗi [Correction] của Coach sẽ tự lưu vào đây để ôn.</p>}
+              {fMistakes.length > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                    <Clock size={11} /> {mistakes.filter((m) => !m.mastered && isDue(m.nextReview)).length} due
+                    <Clock size={11} /> {fMistakes.filter((m) => !m.mastered && isDue(m.nextReview)).length} due
                   </span>
                   <button
                     onClick={() => setDueOnly((v) => !v)}
@@ -247,7 +296,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                   </button>
                 </div>
               )}
-              {(dueOnly ? mistakes.filter((m) => !m.mastered && isDue(m.nextReview)) : [...mistakes].sort((a, b) => Number(isDue(a.nextReview)) - Number(isDue(b.nextReview)) || (a.nextReview ?? 0) - (b.nextReview ?? 0)))
+              {(dueOnly ? fMistakes.filter((m) => !m.mastered && isDue(m.nextReview)) : [...fMistakes].sort((a, b) => Number(isDue(a.nextReview)) - Number(isDue(b.nextReview)) || (a.nextReview ?? 0) - (b.nextReview ?? 0)))
                 .map((m) => (
                 <div key={m.id} className={`border rounded-2xl p-4 ${m.mastered ? 'border-green-200 bg-green-50/50 dark:bg-green-900/10' : 'border-slate-200 dark:border-slate-700'}`}>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -270,13 +319,13 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                         <GraduationCap size={11} /> Luyện lại
                       </button>
                     )}
-                    <button onClick={() => { markMistakeReviewed(m.id); mirrorMistakeReviewed(m.id); bump(); }} className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg" title="Đã ôn 1 lần">
+                    <button onClick={() => { markMistakeReviewed(m.id); mirrorMistakeReviewed(m.id); bump(); toast?.show('Đã review 1 lần'); }} className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg" title="Đã ôn 1 lần">
                       <RotateCcw size={11} /> Reviewed ({m.reviewCount})
                     </button>
-                    <button onClick={() => { markMistakeReviewed(m.id, true); mirrorMistakeReviewed(m.id, true); bump(); }} className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-green-50 text-green-700 rounded-lg">
+                    <button onClick={() => { markMistakeReviewed(m.id, true); mirrorMistakeReviewed(m.id, true); bump(); toast?.show('Mastered! Ghi nhớ tốt lắm 🎉', 'success'); }} className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-green-50 text-green-700 rounded-lg">
                       <Check size={11} /> Mastered
                     </button>
-                    <button onClick={() => { deleteMistake(m.id); mirrorDeleteMistake(m.id); bump(); }} className="ml-auto p-1.5 text-slate-300 hover:text-red-500" aria-label="Delete mistake">
+                    <button onClick={() => { deleteMistake(m.id); mirrorDeleteMistake(m.id); bump(); toast?.show('Đã xóa lỗi'); }} className="ml-auto p-1.5 text-slate-300 hover:text-red-500" aria-label="Delete mistake">
                       <Trash2 size={13} />
                     </button>
                   </div>
@@ -287,14 +336,14 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
 
           {tab === 'vocab' && (
             <>
-              {vocab.length === 0 && <p className="text-sm text-slate-400">Hover vào từ → bấm 📑 để lưu. Sổ từ sẽ hiện ở đây.</p>}
-              {vocab.length > 0 && (
+              {fVocab.length === 0 && q === '' && <p className="text-sm text-slate-400">Hover vào từ → bấm 📑 để lưu. Sổ từ sẽ hiện ở đây.</p>}
+              {fVocab.length > 0 && (
                 <p className="text-[11px] text-slate-400 flex items-center gap-1">
-                  <Clock size={11} /> {vocab.filter((v) => isDue(v.nextReview)).length} due · bấm ✓ khi đã ôn xong 1 từ
+                  <Clock size={11} /> {fVocab.filter((v) => isDue(v.nextReview)).length} due · bấm ✓ khi đã ôn xong 1 từ
                 </p>
               )}
               <div className="grid gap-2">
-                {[...vocab].sort((a, b) => Number(isDue(a.nextReview)) - Number(isDue(b.nextReview)) || (a.nextReview ?? 0) - (b.nextReview ?? 0)).map((v) => (
+                {[...fVocab].sort((a, b) => Number(isDue(a.nextReview)) - Number(isDue(b.nextReview)) || (a.nextReview ?? 0) - (b.nextReview ?? 0)).map((v) => (
                   <div key={v.id} className="flex items-center gap-3 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-2.5">
                     <div className="flex-1 min-w-0">
                       <span className="font-bold text-sm dark:text-white">{v.word}</span>
@@ -311,15 +360,119 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                         <MessageCircle size={13} />
                       </button>
                     )}
-                    <button onClick={() => { markVocabReviewed(v.id); bump(); }} className="p-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg" title="Đã ôn từ này (lên lịch SRS)" aria-label={`Mark ${v.word} reviewed`}>
+                    <button onClick={() => { markVocabReviewed(v.id); bump(); toast?.show(`Đã ôn "${v.word}" — lên lịch SRS lại`); }} className="p-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg" title="Đã ôn từ này (lên lịch SRS)" aria-label={`Mark ${v.word} reviewed`}>
                       <Check size={13} />
                     </button>
-                    <button onClick={() => { deleteVocab(v.id); mirrorDeleteVocab(v.id); bump(); }} className="p-1.5 text-slate-300 hover:text-red-500" aria-label="Delete vocab">
+                    <button onClick={() => { deleteVocab(v.id); mirrorDeleteVocab(v.id); bump(); toast?.show(`Đã xóa từ "${v.word}"`); }} className="p-1.5 text-slate-300 hover:text-red-500" aria-label="Delete vocab">
                       <Trash2 size={13} />
                     </button>
                   </div>
                 ))}
               </div>
+            </>
+          )}
+
+          {tab === 'tasks' && (
+            <>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const title = newTaskTitle.trim();
+                  if (!title) return;
+                  let dueAt: number | undefined;
+                  if (newTaskDue) {
+                    const d = new Date(newTaskDue + 'T23:59:59');
+                    if (Number.isFinite(d.getTime())) dueAt = d.getTime();
+                  }
+                  const next = addTask({ title, description: '', dueAt });
+                  mirrorTask({ title, description: '', dueAt });
+                  setTasks(next);
+                  setNewTaskTitle('');
+                  setNewTaskDue('');
+                  bump();
+                  toast?.show(`Đã đăng ký task "${title}"`, 'success');
+                }}
+                className="flex flex-col sm:flex-row gap-2"
+              >
+                <input
+                  value={newTaskTitle}
+                  onChange={(e) => setNewTaskTitle(e.target.value)}
+                  placeholder="Đăng ký task luyện tập, vd: 'Practice 15 phút mỗi ngày'"
+                  className="flex-1 text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 dark:bg-slate-800 dark:text-white placeholder-slate-400"
+                  maxLength={300}
+                />
+                <input
+                  type="date"
+                  value={newTaskDue}
+                  onChange={(e) => setNewTaskDue(e.target.value)}
+                  className="text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 dark:bg-slate-800 dark:text-white"
+                  title="Hạn chót (tùy chọn)"
+                />
+                <button
+                  type="submit"
+                  disabled={!newTaskTitle.trim()}
+                  className="flex items-center gap-1 text-xs font-bold px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-xl transition-colors"
+                >
+                  <Plus size={13} /> Add
+                </button>
+              </form>
+              {fTasks.length === 0 && q === '' && (
+                <p className="text-sm text-slate-400 mt-2">Chưa có task nào. Đăng ký mục tiêu luyện tập bên trên.</p>
+              )}
+              {fTasks
+                .slice()
+                .sort((a, b) => Number(a.completed) - Number(b.completed) || (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity))
+                .map((t) => {
+                  const now = Date.now();
+                  const isOverdue = t.dueAt != null && t.dueAt < now && !t.completed;
+                  const isDueSoon = t.dueAt != null && t.dueAt < now + 24 * 3600 * 1000 && !t.completed && !isOverdue;
+                  return (
+                    <div
+                      key={t.id}
+                      className={`flex items-start gap-3 border rounded-2xl px-4 py-3 ${t.completed ? 'border-green-200 dark:border-green-900/30 bg-green-50/50 dark:bg-green-900/10' : 'border-slate-200 dark:border-slate-700'}`}
+                    >
+                      <button
+                        onClick={() => {
+                          const next = setTaskCompleted(t.id, !t.completed);
+                          mirrorTaskCompleted(t.id, !t.completed);
+                          setTasks(next);
+                          bump();
+                          toast?.show(t.completed ? 'Mở lại task' : 'Hoàn thành task! 👏', 'success');
+                        }}
+                        className={`mt-0.5 shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${t.completed ? 'bg-green-500 border-green-500' : 'border-slate-300 dark:border-slate-600 hover:border-blue-400'}`}
+                        aria-label={t.completed ? 'Unmark complete' : 'Mark complete'}
+                      >
+                        {t.completed && <Check size={11} className="text-white" />}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-bold dark:text-white ${t.completed ? 'line-through text-slate-400' : ''}`}>{t.title}</p>
+                        {t.dueAt && (
+                          <p className={`text-[11px] mt-0.5 ${isOverdue ? 'text-red-500 font-bold' : isDueSoon ? 'text-amber-500' : 'text-slate-400'}`}>
+                            {isOverdue ? '⚠️ Overdue: ' : 'Due: '}
+                            {new Date(t.dueAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                            {isOverdue && !t.dueAt ? '' : ''}
+                          </p>
+                        )}
+                        {t.completed && t.completedAt && (
+                          <p className="text-[10px] text-slate-400 mt-0.5">✓ Completed {new Date(t.completedAt).toLocaleDateString()}</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => {
+                          const next = deleteTask(t.id);
+                          mirrorDeleteTask(t.id);
+                          setTasks(next);
+                          bump();
+                          toast?.show('Đã xóa task');
+                        }}
+                        className="shrink-0 p-1.5 text-slate-300 hover:text-red-500 transition-colors"
+                        aria-label="Delete task"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  );
+                })}
             </>
           )}
 

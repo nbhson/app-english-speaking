@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { AIConfig, DEFAULT_CONFIG, saveConfig, chatOnce } from '../utils/api';
 import { X, Save, RotateCcw, Plug, Mic, Volume2, MessageSquare, Play, Loader2, User, SlidersHorizontal, FileText, Layers, Wifi } from 'lucide-react';
-import { englishVoices } from '../utils/browser';
+import { englishVoices, voiceQualityScore } from '../utils/browser';
 import { getProfiles, saveProfiles, getActiveProfileId, type NamedProfile } from '../utils/storage';
 import { uid } from '../utils/uid';
 import { speakPreview } from '../utils/tts';
@@ -296,12 +296,16 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
               </div>
               {cfg.ttsEngine === 'browser' && (
                 <>
-                  <Field label="Browser voice (EN)" hint="Giọng đọc hệ thống. US/UK, nam/nữ tùy OS/browser.">
+                  <Field label="Browser voice (EN)" hint="Để 'Auto (best)' để app tự chọn giọng tự nhiên nhất (Neural/Natural/Google). Giọng có ✨ nghe như người thật; giọng 'Compact' là robot.">
                     <select className={inputCls} value={cfg.ttsVoiceURI ?? ''} onChange={(e) => set('ttsVoiceURI', e.target.value)}>
-                      <option value="">System default</option>
-                      {browserVoices.map((v) => (
-                        <option key={v.voiceURI} value={v.voiceURI}>{v.name} — {v.lang}</option>
-                      ))}
+                      <option value="">✨ Auto (best available)</option>
+                      {[...browserVoices]
+                        .sort((a, b) => voiceQualityScore(b) - voiceQualityScore(a))
+                        .map((v) => (
+                          <option key={v.voiceURI} value={v.voiceURI}>
+                            {voiceQualityScore(v) >= 50 ? '✨ ' : voiceQualityScore(v) < 0 ? '⚠️ ' : ''}{v.name} — {v.lang}
+                          </option>
+                        ))}
                     </select>
                   </Field>
                   <div className="grid grid-cols-2 gap-3">

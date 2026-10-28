@@ -6,7 +6,7 @@
 
 import type { AIConfig } from './api';
 import { speech } from './api';
-import { pickVoiceByURI } from './browser';
+import { resolveVoice } from './browser';
 import { stripAiBlocks } from './aiBlocks';
 import { stripMarkdownForSpeech } from './markdown';
 
@@ -148,7 +148,7 @@ export async function speakCoachText(
   u.lang = 'en-US';
   u.rate = config.ttsRate ?? 1;
   u.pitch = config.ttsPitch ?? 1;
-  const v = pickVoiceByURI(config.ttsVoiceURI);
+  const v = resolveVoice(config.ttsVoiceURI);
   if (v) u.voice = v;
   u.onend = finish;
   u.onerror = finish;
@@ -202,7 +202,7 @@ export function speakAmbient(config: AIConfig, text: string): void {
       u.lang = 'en-US';
       u.rate = config.ttsRate ?? 1;
       u.pitch = config.ttsPitch ?? 1;
-      const v = pickVoiceByURI(config.ttsVoiceURI);
+      const v = resolveVoice(config.ttsVoiceURI);
       if (v) u.voice = v;
       window.speechSynthesis.speak(u);
     }
@@ -238,7 +238,7 @@ export async function speakPreview(text: string, config: AIConfig): Promise<void
     u.lang = 'en-US';
     u.rate = config.ttsRate ?? 1;
     u.pitch = config.ttsPitch ?? 1;
-    const v = pickVoiceByURI(config.ttsVoiceURI);
+    const v = resolveVoice(config.ttsVoiceURI);
     if (v) u.voice = v;
     window.speechSynthesis.speak(u);
   }

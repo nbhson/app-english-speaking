@@ -53,3 +53,13 @@ CREATE TABLE IF NOT EXISTS progress_days (
   minutes INTEGER NOT NULL DEFAULT 0,
   xp INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  due_at INTEGER,
+  completed INTEGER NOT NULL DEFAULT 0,
+  completed_at INTEGER,
+  created_at INTEGER NOT NULL
+);

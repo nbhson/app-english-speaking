@@ -73,6 +73,16 @@ export interface VocabEntry {
   nextReview?: number;
 }
 
+export interface TaskEntry {
+  id: string;
+  title: string;
+  description: string;
+  dueAt?: number | null;
+  completed: boolean;
+  completedAt?: number | null;
+  createdAt: number;
+}
+
 export interface SessionRecord {
   id: string;
   mode: AppMode;
