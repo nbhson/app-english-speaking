@@ -22,6 +22,10 @@ db.exec(fs.readFileSync(path.join(__dirname, '..', 'schema.sql'), 'utf8'));
 
 const uid = () => crypto.randomUUID();
 
+// YYYY-MM-DD theo giờ local (không phải UTC) — khớp todayKey() của web client.
+const localDateKey = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 const app = express();
 // Chỉ các origin dev-local của web app được gọi API — chặn mọi trang web khác
 // truy cập dữ liệu sessions/transcripts qua localhost của user.
@@ -114,6 +118,18 @@ app.post('/api/sessions', (req, res) => {
       timestamp: Number.isFinite(Number(m?.timestamp)) ? Number(m.timestamp) : Date.now(),
     }));
   const id = uid();
+  // Coerce mọi trường số: giá trị NaN/không phải số làm SQLite throw 500.
+  // Strings (mode) bị cap độ dài — body 5MB không được ghi cả vào DB.
+  const num = (v) => Math.max(0, intOr(v, 0));
+  const mode = typeof s.mode === 'string' && s.mode.trim() ? s.mode.trim().slice(0, 40) : 'daily';
+  const startedAt = Math.max(0, intOr(s.startedAt, Date.now()));
+  const endedAt = Math.max(0, intOr(s.endedAt, Date.now()));
+  const durationSec = Math.min(num(s.durationSec), 86_400);
+  const turns = Math.min(num(s.turns), 10_000);
+  const corrections = Math.min(num(s.corrections), 10_000);
+  const avgScore = Math.max(0, Math.min(intOr(s.avgScore, 0), 5));
+  const vocabPoints = Math.max(0, intOr(s.vocabPoints, 0));
+  const confidence = Math.max(0, Math.min(intOr(s.confidence, 0), 100));
   const insSession = db.prepare(
     `INSERT INTO sessions (id, mode, started_at, ended_at, duration_sec, turns, corrections, avg_score, vocab_points, confidence)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -128,15 +144,15 @@ app.post('/api/sessions', (req, res) => {
   try {
     insSession.run(
       id,
-      s.mode || 'daily',
-      s.startedAt,
-      s.endedAt || Date.now(),
-      s.durationSec || 0,
-      s.turns || 0,
-      s.corrections || 0,
-      s.avgScore || 0,
-      s.vocabPoints || 0,
-      s.confidence || 0,
+      mode,
+      startedAt,
+      endedAt,
+      durationSec,
+      turns,
+      corrections,
+      avgScore,
+      vocabPoints,
+      confidence,
     );
     for (const m of transcript) {
       insMsg.run(uid(), id, m.role, m.text, m.suggestion, m.wpm, m.fillerCount, m.timestamp);
@@ -182,14 +198,25 @@ app.get('/api/mistakes', (_req, res) => {
 
 app.post('/api/mistakes', (req, res) => {
   const b = req.body || {};
-  if (!b.original) return res.status(400).json({ error: 'original required' });
-  const existing = db.prepare('SELECT * FROM mistakes WHERE original = ?').get(b.original);
+  // Cap độ dài từng field: body 5MB không được ghi thẳng cả vào SQLite.
+  const s = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+  const original = s(b.original, 2000);
+  if (!original) return res.status(400).json({ error: 'original required' });
+  const existing = db.prepare('SELECT * FROM mistakes WHERE original = ?').get(original);
   if (existing) return res.json({ id: existing.id, deduped: true });
   const id = uid();
   db.prepare(
     `INSERT INTO mistakes (id, original, corrected, alternative, explanation, mode, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, b.original, b.corrected || '', b.alternative || '', b.explanation || '', b.mode || '', Date.now());
+  ).run(
+    id,
+    original,
+    s(b.corrected, 2000),
+    s(b.alternative, 2000),
+    s(b.explanation, 4000),
+    s(b.mode, 40),
+    Date.now(),
+  );
   res.status(201).json({ id });
 });
 
@@ -233,14 +260,21 @@ app.get('/api/vocab', (_req, res) => {
 
 app.post('/api/vocab', (req, res) => {
   const b = req.body || {};
-  if (!b.word) return res.status(400).json({ error: 'word required' });
+  if (typeof b.word !== 'string' || !b.word.trim()) return res.status(400).json({ error: 'word required' });
   const existing = db.prepare('SELECT * FROM vocab WHERE word = ?').get(b.word.toLowerCase());
   if (existing) return res.json({ id: existing.id, deduped: true });
   const id = uid();
   db.prepare(
     `INSERT INTO vocab (id, word, translation, ipa, example, created_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(id, b.word.toLowerCase(), b.translation || '', b.ipa || '', b.example || '', Date.now());
+  ).run(
+    id,
+    b.word.toLowerCase().slice(0, 60),
+    typeof b.translation === 'string' ? b.translation.slice(0, 200) : '',
+    typeof b.ipa === 'string' ? b.ipa.slice(0, 60) : '',
+    typeof b.example === 'string' ? b.example.slice(0, 300) : '',
+    Date.now(),
+  );
   res.status(201).json({ id });
 });
 
@@ -316,22 +350,25 @@ app.post('/api/progress/log', (req, res) => {
   // vào progress → XP/streak poisoning.
   const durationSec = Math.max(0, Math.min(intOr(b.durationSec, 0), 24 * 3600));
   const xp = Math.max(0, Math.min(intOr(b.xp, 0), 10_000));
-  const date = new Date().toISOString().slice(0, 10);
-  const cur = db.prepare('SELECT * FROM progress_days WHERE date = ?').get(date);
+  const date = new Date();
+  // Local date (not UTC): user ở VN (UTC+7) học buổi sáng sớm phải tính vào
+  // đúng ngày hôm nay của họ, không phải hôm trước theo UTC.
+  const dateKey = localDateKey(date);
+  const cur = db.prepare('SELECT * FROM progress_days WHERE date = ?').get(dateKey);
   if (cur) {
     db.prepare(
       'UPDATE progress_days SET sessions = sessions + 1, minutes = minutes + ?, xp = xp + ? WHERE date = ?',
-    ).run(Math.round(durationSec / 60), xp, date);
+    ).run(Math.round(durationSec / 60), xp, dateKey);
   } else {
     db.prepare('INSERT INTO progress_days (date, sessions, minutes, xp) VALUES (?, 1, ?, ?)').run(
-      date,
+      dateKey,
       Math.round(durationSec / 60),
       xp,
     );
   }
   const days = db.prepare('SELECT * FROM progress_days ORDER BY date DESC LIMIT 90').all();
   const set = new Set(days.map((d) => d.date));
-  const key = (d) => d.toISOString().slice(0, 10);
+  const key = localDateKey;
   let streak = 0;
   const curDate = new Date();
   if (!set.has(key(curDate))) curDate.setDate(curDate.getDate() - 1);

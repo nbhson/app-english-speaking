@@ -36,7 +36,15 @@ function write(key: string, val: unknown): void {
   }
 }
 
-export const todayKey = (d = new Date()) => d.toISOString().slice(0, 10);
+// Local calendar date (YYYY-MM-DD) — NOT UTC. Streak day boundary phải theo
+// giờ của user: with UTC, buổi học 00:00–07:00 sáng ở VN (UTC+7) bị tính
+// vào hôm trước và làm gãy streak.
+export const todayKey = (d = new Date()) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
 
 // --- Sessions ---
 export function getSessions(): SessionRecord[] {

@@ -326,6 +326,40 @@ const App: React.FC = () => {
 
   // --- Chat turn pipeline ---
 
+  /**
+   * Shared stream runner for a live turn or the final assessment turn.
+   * Deltas/abort/errors all funnel through the same transcription updates.
+   */
+  const streamTurn = (messages: ChatMessage[], modelId: string, errorAnnounce: string) =>
+    runChatStream(
+      configRef.current,
+      messages,
+      {
+        onDelta: (delta) => {
+          setTranscriptions((prev) => prev.map((e) => (e.id === modelId ? { ...e, text: e.text + delta } : e)));
+        },
+        onAbort: () => {
+          setTranscriptions((prev) => prev.filter((e) => e.id !== modelId));
+        },
+        onError: (msg) => {
+          console.error('Chat error:', msg);
+          setAnnounce(errorAnnounce);
+          setTranscriptions((prev) =>
+            prev.map((e) => (e.id === modelId ? { ...e, text: `⚠️ ${msg}`, error: true } : e)),
+          );
+        },
+        onDone: (full) => {
+          finalizeModelTurn(modelId, full);
+        },
+      },
+      (controller) => {
+        abortRef.current = controller;
+      },
+      () => {
+        abortRef.current = null;
+      },
+    );
+
   const processUserText = async (raw: string) => {
     const text = (raw || '').trim();
     if (!text) return;
@@ -361,34 +395,7 @@ const App: React.FC = () => {
     const modelId = uid();
     setTranscriptions((prev) => [...prev, { id: modelId, role: 'model', text: '', timestamp: now() }]);
 
-    await runChatStream(
-      configRef.current,
-      messages,
-      {
-        onDelta: (delta) => {
-          setTranscriptions((prev) => prev.map((e) => (e.id === modelId ? { ...e, text: e.text + delta } : e)));
-        },
-        onAbort: () => {
-          setTranscriptions((prev) => prev.filter((e) => e.id !== modelId));
-        },
-        onError: (msg) => {
-          console.error('Chat error:', msg);
-          setAnnounce('Có lỗi kết nối khi gửi câu trả lời. Bạn thử lại nhé.');
-          setTranscriptions((prev) =>
-            prev.map((e) => (e.id === modelId ? { ...e, text: `⚠️ ${msg}`, error: true } : e)),
-          );
-        },
-        onDone: (full) => {
-          finalizeModelTurn(modelId, full);
-        },
-      },
-      (controller) => {
-        abortRef.current = controller;
-      },
-      () => {
-        abortRef.current = null;
-      },
-    );
+    await streamTurn(messages, modelId, 'Có lỗi kết nối khi gửi câu trả lời. Bạn thử lại nhé.');
 
     processingRef.current = false;
     setIsProcessing(false);
@@ -592,34 +599,7 @@ const App: React.FC = () => {
     const modelId = uid();
     setTranscriptions((prev) => [...prev, { id: modelId, role: 'model', text: '', timestamp: now() }]);
 
-    await runChatStream(
-      configRef.current,
-      messages,
-      {
-        onDelta: (delta) => {
-          setTranscriptions((prev) => prev.map((e) => (e.id === modelId ? { ...e, text: e.text + delta } : e)));
-        },
-        onAbort: () => {
-          setTranscriptions((prev) => prev.filter((e) => e.id !== modelId));
-        },
-        onError: (msg) => {
-          console.error('Assessment error:', msg);
-          setAnnounce('Có lỗi khi tạo đánh giá cuối buổi.');
-          setTranscriptions((prev) =>
-            prev.map((e) => (e.id === modelId ? { ...e, text: `⚠️ ${msg}`, error: true } : e)),
-          );
-        },
-        onDone: (full) => {
-          finalizeModelTurn(modelId, full);
-        },
-      },
-      (controller) => {
-        abortRef.current = controller;
-      },
-      () => {
-        abortRef.current = null;
-      },
-    );
+    await streamTurn(messages, modelId, 'Có lỗi khi tạo đánh giá cuối buổi.');
 
     processingRef.current = false;
     setIsProcessing(false);
@@ -684,6 +664,26 @@ const App: React.FC = () => {
           </div>
         )}
         <div aria-live="polite" role="status" className="sr-only">{announce}</div>
+
+        {/* Mid-session errors (STT/mic failures) — StartScreen is hidden while
+            active, so without this banner the user would never see the error. */}
+        {session.isActive && startError && (
+          <div
+            className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 text-red-700 dark:text-red-300 rounded-2xl px-4 py-2.5"
+            role="alert"
+            lang="vi"
+          >
+            <TriangleAlert size={14} className="mt-0.5 shrink-0" />
+            <span className="flex-1">{startError}</span>
+            <button
+              onClick={() => setStartError(null)}
+              className="shrink-0 p-0.5 -m-0.5 rounded text-red-400 hover:text-red-600 dark:hover:text-red-200 transition-colors"
+              aria-label="Dismiss error"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
 
         <main className="flex-1 flex flex-col md:flex-row max-w-[1600px] mx-auto w-full p-2 sm:p-4 md:p-6 gap-3 md:gap-6 h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)] min-h-0 overflow-hidden relative">
           {/* Desktop Sidebar */}
