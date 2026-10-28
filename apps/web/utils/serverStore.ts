@@ -171,7 +171,8 @@ export function mirrorDeleteVocab(id: string): void {
 }
 
 export function mirrorClearSessions(): void {
-  mirrorOrQueue({ method: 'DELETE', path: '/api/sessions' });
+  // Server giờ yêu cầu confirm tường minh cho bulk delete.
+  mirrorOrQueue({ method: 'DELETE', path: '/api/sessions', body: { confirm: 'DELETE ALL' } });
 }
 
 export function mirrorProgress(durationSec: number, xp: number): Promise<number | null> {

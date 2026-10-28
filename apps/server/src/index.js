@@ -1,9 +1,12 @@
 // FluentDev Library API — Express + SQLite (node:sqlite, zero native deps).
 // DB file lives in <repo>/data/fluentdev.db (override with DB_PATH).
-// No auth: local-first single-user store for the desktop/dev setup.
+// No auth: local-first single-user store. CORS bị giới hạn về web app origin
+// (mặc định localhost:8240, override bằng LIBRARY_ORIGIN) — cors() trần là
+// mở cửa cho MỌI website trong browser đọc/xóa SQLite library qua localhost.
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const { DatabaseSync } = require('node:sqlite');
@@ -17,11 +20,25 @@ const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA journal_mode = WAL;');
 db.exec(fs.readFileSync(path.join(__dirname, '..', 'schema.sql'), 'utf8'));
 
-const uid = () =>
-  `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+const uid = () => crypto.randomUUID();
 
 const app = express();
-app.use(cors());
+// Chỉ các origin dev-local của web app được gọi API — chặn mọi trang web khác
+// truy cập dữ liệu sessions/transcripts qua localhost của user.
+const ALLOWED_ORIGINS = (process.env.LIBRARY_ORIGIN || 'http://localhost:8240,http://127.0.0.1:8240')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+app.use(
+  cors({
+    origin(origin, cb) {
+      // cb(null, false) = không set CORS headers → browser tự chặn request.
+      // (throw ở đây sẽ thành 500 JSON — header không được thêm khi đó.)
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      return cb(null, false);
+    },
+  }),
+);
 app.use(express.json({ limit: '5mb' }));
 
 const bool = (v) => (v ? 1 : 0);
@@ -31,9 +48,11 @@ const intOr = (v, fallback) => {
   return Number.isFinite(n) ? Math.trunc(n) : fallback;
 };
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, db: DB_PATH }));// ---------- Sessions (+ embedded messages) ----------
+app.get('/api/health', (_req, res) => res.json({ ok: true })); // không lộ DB_PATH
+// ---------- Sessions (+ embedded messages) ----------
 app.get('/api/sessions', (req, res) => {
-  const limit = Math.min(intOr(req.query.limit, 100), 500);
+  // Clamp >= 1: limit=-1 trước đây thành SQLite LIMIT -1 (unbounded payload).
+  const limit = Math.max(1, Math.min(intOr(req.query.limit, 100), 500));
   const sessions = db
     .prepare('SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?')
     .all(limit);
@@ -81,8 +100,20 @@ app.get('/api/sessions', (req, res) => {
 app.post('/api/sessions', (req, res) => {
   const s = req.body || {};
   if (!s.startedAt) return res.status(400).json({ error: 'startedAt required' });
-  const id = s.id || uid();
-  const transcript = Array.isArray(s.transcript) ? s.transcript : [];
+  // id/role do SERVER sinh/validate: client id trùng trước đây rollback cả
+  // session; role bất kỳ làm bẩn schema.
+  const VALID_ROLES = new Set(['user', 'model', 'system']);
+  const transcript = (Array.isArray(s.transcript) ? s.transcript : [])
+    .slice(0, 1000)
+    .map((m) => ({
+      role: VALID_ROLES.has(m?.role) ? m.role : 'user',
+      text: typeof m?.text === 'string' ? m.text.slice(0, 100_000) : '',
+      suggestion: typeof m?.suggestion === 'string' ? m.suggestion.slice(0, 5000) : null,
+      wpm: Number.isFinite(Number(m?.wpm)) ? Number(m.wpm) : null,
+      fillerCount: Number.isFinite(Number(m?.fillerCount)) ? Number(m.fillerCount) : null,
+      timestamp: Number.isFinite(Number(m?.timestamp)) ? Number(m.timestamp) : Date.now(),
+    }));
+  const id = uid();
   const insSession = db.prepare(
     `INSERT INTO sessions (id, mode, started_at, ended_at, duration_sec, turns, corrections, avg_score, vocab_points, confidence)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -108,16 +139,7 @@ app.post('/api/sessions', (req, res) => {
       s.confidence || 0,
     );
     for (const m of transcript) {
-      insMsg.run(
-        m.id || uid(),
-        id,
-        m.role,
-        m.text || '',
-        m.suggestion || null,
-        m.wpm ?? null,
-        m.fillerCount ?? null,
-        m.timestamp || Date.now(),
-      );
+      insMsg.run(uid(), id, m.role, m.text, m.suggestion, m.wpm, m.fillerCount, m.timestamp);
     }
     db.exec('COMMIT');
   } catch (e) {
@@ -127,7 +149,12 @@ app.post('/api/sessions', (req, res) => {
   res.status(201).json({ id });
 });
 
-app.delete('/api/sessions', (_req, res) => {
+app.delete('/api/sessions', (req, res) => {
+  // Xóa TOÀN BỘ library — phải có confirm body tường minh, tránh một request
+  // nhầm (hoặc tab khác gọi qua localhost) mất sạch transcripts.
+  if (req.body?.confirm !== 'DELETE ALL') {
+    return res.status(400).json({ error: 'confirm required', hint: 'send {"confirm":"DELETE ALL"}' });
+  }
   db.prepare('DELETE FROM messages').run();
   db.prepare('DELETE FROM sessions').run();
   res.json({ ok: true });
@@ -234,8 +261,10 @@ app.get('/api/progress', (_req, res) => {
 
 app.post('/api/progress/log', (req, res) => {
   const b = req.body || {};
-  const durationSec = intOr(b.durationSec, 0);
-  const xp = intOr(b.xp, 0);
+  // Clamp >= 0 + sane max: trước đây xp/durationSec âm hoặc khổng lồ ghi thẳng
+  // vào progress → XP/streak poisoning.
+  const durationSec = Math.max(0, Math.min(intOr(b.durationSec, 0), 24 * 3600));
+  const xp = Math.max(0, Math.min(intOr(b.xp, 0), 10_000));
   const date = new Date().toISOString().slice(0, 10);
   const cur = db.prepare('SELECT * FROM progress_days WHERE date = ?').get(date);
   if (cur) {
@@ -275,17 +304,19 @@ server.on('error', (err) => {
   process.exitCode = 1;
 });
 
-// Safety net: log stray async failures instead of letting Node's default
-// (crash on unhandled rejection) take down `node --watch` mid-session.
+// Safety net: log stray async failures (full stack) instead of Node's default
+// crash taking `node --watch` down mid-session.
 process.on('unhandledRejection', (reason) => {
-  console.error('[library-api] unhandled rejection:', reason instanceof Error ? reason.message : reason);
+  const detail = reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
+  console.error('[library-api] unhandled rejection:', detail);
 });
 
 // JSON error handler — must be registered last. Gives clients a predictable
-// { error } payload instead of Express's HTML/stack-trace 500.
+// { error } payload instead of Express's HTML/stack-trace 500. Chi tiết lỗi
+// (SQL shape, file paths) chỉ vào log server, KHÔNG trả client.
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
-  console.error('[library-api] unhandled error:', err && err.message ? err.message : err);
+  console.error('[library-api] unhandled error:', err instanceof Error ? (err.stack ?? err.message) : err);
   const status = err && err.status ? err.status : 500;
-  res.status(status).json({ error: err && err.message ? String(err.message) : 'Internal server error' });
+  res.status(status).json({ error: status === 500 ? 'Internal server error' : String(err.message) });
 });

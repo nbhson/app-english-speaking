@@ -134,6 +134,11 @@ const App: React.FC = () => {
   const wpmSamplesRef = useRef<number[]>([]);
   const processUserTextRef = useRef<(text: string) => void>(() => {});
   const stopSessionRef = useRef<() => void>(() => {});
+  // Session epoch: tăng mỗi lần start/stop — guard cho timer gốc (Finish +
+  // 1.5s stop tự động): nếu user start session mới trong khoảng 1.5s, timer
+  // cũ KHÔNG được force-stop session mới (bug trước đây).
+  const sessionEpochRef = useRef(0);
+  const finishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { configRef.current = config; }, [config]);
   useEffect(() => { transcriptionsRef.current = transcriptions; }, [transcriptions]);
@@ -432,6 +437,11 @@ const App: React.FC = () => {
   };
 
   const stopSession = (save = true) => {
+    sessionEpochRef.current += 1; // vô hiệu timer Finish của session cũ
+    if (finishTimerRef.current) {
+      clearTimeout(finishTimerRef.current);
+      finishTimerRef.current = null;
+    }
     if (save && activeRef.current) persistSession();
     stt.resetBuffer();
     stt.stopRecognition();
@@ -543,6 +553,13 @@ const App: React.FC = () => {
 
   const finishAndAssess = async () => {
     if (!activeRef.current) return;
+    // Đang có turn xử lý dở? Abort stream cũ TRƯỚC khi ghi đè abortRef —
+    // trước đây controller cũ bị ghi đè, stream cũ không thể hủy và hai
+    // stream cùng ghi vào transcript (race).
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
     // Don't lose speech spoken within the 3s window when user hits Finish.
     const pendingSpeech = stt.pendingSpeech();
     stt.resetBuffer();
@@ -606,7 +623,12 @@ const App: React.FC = () => {
 
     processingRef.current = false;
     setIsProcessing(false);
-    setTimeout(() => stopSession(true), 1500);
+    // Timer với epoch guard: nếu session mới start trong 1.5s, epoch đổi →
+    // callback cũ bỏ qua thay vì force-stop session của user (bug cũ).
+    const epoch = sessionEpochRef.current;
+    finishTimerRef.current = setTimeout(() => {
+      if (sessionEpochRef.current === epoch) stopSession(true);
+    }, 1500);
   };
 
   // --- Transcript actions ---

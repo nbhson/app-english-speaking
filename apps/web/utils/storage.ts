@@ -266,7 +266,20 @@ export function importLibrary(json: string): { sessions: number; mistakes: numbe
   const progress = Array.isArray(parsed.progress) ? parsed.progress : [];
 
   const mergedSessions = dedupeBy(
-    [...sessions, ...getSessions()].filter((s) => s && typeof s.id === 'string'),
+    [...sessions, ...getSessions()]
+      .filter((s) => s && typeof s.id === 'string')
+      // Coerce numeric fields: bản import từ nguồn khác có thể thiếu/khác kiểu
+      // — toFixed()/Math.round() trên NaN làm crash LibraryPanel khi render.
+      .map((s) => ({
+        ...s,
+        durationSec: Number.isFinite(Number(s.durationSec)) ? Number(s.durationSec) : 0,
+        turns: Number.isFinite(Number(s.turns)) ? Number(s.turns) : 0,
+        corrections: Number.isFinite(Number(s.corrections)) ? Number(s.corrections) : 0,
+        avgScore: Number.isFinite(Number(s.avgScore)) ? Number(s.avgScore) : 0,
+        vocabPoints: Number.isFinite(Number(s.vocabPoints)) ? Number(s.vocabPoints) : 0,
+        confidence: Number.isFinite(Number(s.confidence)) ? Number(s.confidence) : 0,
+        transcript: Array.isArray(s.transcript) ? s.transcript : [],
+      })),
     (s) => s.id,
   ).slice(0, 100);
   const mergedMistakes = dedupeBy(

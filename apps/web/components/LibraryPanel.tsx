@@ -216,7 +216,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                 <div key={s.id} className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="text-sm font-bold dark:text-white">
-                      {s.mode} · {new Date(s.startedAt).toLocaleString()} · {Math.round(s.durationSec / 60)}m · {s.turns} turns · ⭐ {s.avgScore.toFixed(1)}
+                      {s.mode} · {new Date(s.startedAt).toLocaleString()} · {Math.round(Number(s.durationSec) / 60)}m · {s.turns} turns · ⭐ {Number.isFinite(Number(s.avgScore)) ? Number(s.avgScore).toFixed(1) : '—'}
                     </div>
                     <button
                       onClick={() => downloadText(`fluentdev-${s.mode}-${s.id.slice(-6)}.md`, transcriptToMarkdown(s.transcript, s.mode))}
