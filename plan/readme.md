@@ -177,13 +177,73 @@ mục tiêu chính là giảm parse/eval trên critical path + hết warning.
 - [x] `vite build` — không còn chunk warning; preview smoke-test OK
 - [x] `eslint` changed files — 0 errors/warnings · `node --check` server OK
 
-## Remaining risks (đọc tiếp ở đợt sau)
+# Round 4 — Server-side AI proxy (2026-10-29)
 
-- Pre-features animation gap (chỉ mạng rất chậm): `m` component trước khi
-  `motionFeatures` chunk resolve sẽ render trạng thái final không animate, rồi
-  re-animate một lần khi features gắn vào. Đã giảm thiểu bằng preload lúc
-  module-eval; rủi ro chỉ còn trên mạng chậm, không crash.
-- `motionFeatures.ts` phải giữ export từ `motion/react` (không hardcode path
-  dist) — nếu đổi package motion nhớ giữ file này tách riêng để chunk split.
-- API key vẫn plaintext trong localStorage (đã cảnh báo trong Settings); giải pháp triệt để là proxy server-side.
-- Server không có rate-limit — chấp nhận được vì local-first + CORS allowlist.
+## Objective
+
+Fix the remaining round-3 risk: "API key stays plaintext in localStorage".
+Add a server-side proxy so the key lives in the server env and the web app
+defaults to proxy mode. Existing BYOK users get a one-time migration notice
+and switch explicitly; no silent breakage.
+
+## Findings
+
+| # | Severity | Vị trí | Vấn đề | Fix |
+|---|----------|--------|---------|-----|
+| R4-1 | MAJOR | web localStorage / server env | API key lưu plaintext trong localStorage — bất kỳ XSS nào đọc được key của user, đặc biệt nguy hiểm khi user dùng remote gateway (OpenAI/Claude API key thật) | Server proxy: POST /api/ai/* forward upstream với key từ server env, browser chỉ gửi request body |
+| R4-2 | MAJOR | web/api.ts | BYOK là default path (key trong localStorage) — user mới cũng phải lưu key ở browser | Proxy mode là default (`useServerProxy: true`); BYOK chỉ là explicit opt-in |
+| R4-3 | MAJOR | web | Legacy user đang dùng BYOK: nếu app chuyển silent sang proxy, request không hoạt động nếu server chưa có env key | Migration notice: phát hiện key trong localStorage → banner one-time offer proxy; user chủ động chọn |
+
+## Planned changes
+
+1. **Server proxy** (`apps/server/src/index.js`):
+   - `POST /api/ai/chat/completions` — JSON body, SSE passthrough (Readable.fromWeb)
+   - `POST /api/ai/audio/transcriptions` — multipart passthrough
+   - `POST /api/ai/audio/speech` — JSON → audio stream passthrough
+   - `GET  /api/ai/status` — readiness `{ok, proxy, hasKey}`
+   - Whitelist actions only (regex route — no path injection)
+   - `AI_PROXY_BASE_URL`, `AI_PROXY_API_KEY`, `AI_PROXY_TOKEN` env vars
+   - Optional Bearer token auth for non-browser callers
+   - Client-disconnect → upstream abort (res.on('close') guard)
+   - No upstream URL/key in error messages (only server log)
+
+2. **Web client** (`apps/web/utils/api.ts`):
+   - `AIConfig.useServerProxy` (default `true`)
+   - `providerUrl(config, path)` → `{LIBRARY_API}/api/ai/<path>` or `{baseUrl}/<path>`
+   - `buildHeaders()`: no Authorization header in proxy mode
+   - `loadConfig()`: legacy key → direct BYOK (no silent switch); keyless → proxy
+   - `saveConfig()`: strip key from localStorage when proxy mode
+   - `proxyStatus()` helper for Settings UI
+
+3. **Settings UI** — honest connection-mode UI:
+   - "Server proxy (recommended)" / "Direct (BYOK)" toggle
+   - Live proxy status (ping `/api/ai/status`) — online/offline/key indicator
+   - Key input: disabled + server-side label in proxy mode; active in direct mode
+   - Conditional Advanced note (proxy = green, direct = amber warning)
+
+4. **Migration notice** (App.tsx):
+   - Lazy state: legacy key in localStorage + no `fluentdev-proxy-notice` flag → banner
+   - "Chuyển" → save proxy mode + write flag; "Keep direct" → write flag only
+   - Key stays in named profiles (so switching back doesn't lose it)
+
+5. **Verify**: tsc, vitest 49/49, vite build, node --check, curl smoke test
+
+## Trạng thái Round 4
+
+- [x] Plan
+- [x] Fix R4-1..R4-3
+- [x] Server proxy routes (`chat/completions`, `audio/transcriptions`, `audio/speech`) + status probe
+- [x] Web proxy/direct routing with migration
+- [x] Settings UI honest about mode + live status
+- [x] Migration notice for legacy BYOK users
+- [x] 8 new tests (proxyMode.test.ts: migration, key-stripping, URL routing, no-auth in proxy)
+- [x] `tsc --noEmit` pass · vitest **49/49** pass · `vite build` OK · `node --check` server OK · eslint 0 errors
+- [x] Commit + self-review
+
+## Remaining risks
+
+- `motionFeatures.ts` must keep export from `motion/react` (not hardcoded dist) — if package changes, keep this file separate for chunk splitting.
+- Server doesn't have rate limiting — acceptable for local-first + CORS allowlist.
+- Direct BYOK mode still stores the key in localStorage (intentional opt-in; honest UI + warning in place). No silent fallback to proxy if upstream is unreachable.
+- If the Library server is down, proxy mode fails with "upstream unreachable" (HTTP 502). User must switch to Direct BYOK or bring the server up.
+- Proxy migration notice fires only on first render (lazy initializer); if user dismisses it without acting, they stay on direct mode with key in browser — acceptable as explicit opt-in.
