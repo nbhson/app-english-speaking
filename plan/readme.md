@@ -117,3 +117,73 @@ thêm 2 feature (F5 session transcript viewer, F6 SRS due badge), verify đầy 
 - Bundle > 500 kB (vite warning) — cân nhắc code-split `motion`/`react-markdown` nếu cần.
 - API key vẫn plaintext trong localStorage (đã cảnh báo trong Settings); giải pháp triệt để là proxy server-side.
 - Server không có rate-limit — chấp nhận được vì local-first + CORS allowlist.
+
+# Round 3 — Bundle optimization / code-splitting (2026-10-29)
+
+## Objective
+
+Xử lý recorded follow-up: "Bundle > 500 kB (vite warning) — candidates for
+code-splitting: motion, react-markdown". Phân tích composition, tách async chunks,
+không layout flash, không regress 41 tests.
+
+## Phân tích bundle (before)
+
+Build đơn chunk **657.60 kB** (gzip 204.19 kB). Attribution qua sourcemap
+(unminified source trong initial graph):
+
+| Dep | Source | Ghi chú |
+|-----|--------|---------|
+| react-dom | 533 kB | không tách được (React 19) |
+| motion-dom + framer-motion | ~440 kB | full `motion` component = domMax (projection + drag) |
+| react-markdown ecosystem (micromark/mdast/unified/vfile) | ~350 kB | chỉ dùng trong ChatMessageList |
+| [app code] | 275 kB | |
+
+Không có usage `layout`/`drag`/`whileHover`/`whileTap` → dùng được LazyMotion
+`domAnimation` (chỉ animations + gestures), bỏ cả layout-projection engine.
+
+## Changes (`c860876`)
+
+1. **react-markdown → async chunk** (167.06 kB / gzip 51.17): `ChatMessageList`
+   dùng `React.lazy(() => import('./MessageMarkdown'))` + preload ngay lúc
+   module-eval (`void import(...)`) — message đầu tiên gần như luôn sẵn trước
+   khi stream trả về. Fallback Suspense = plain text cùng wrapper class
+   (`.msg-user`/`.msg-coach`) → không layout flash. Module `MessageMarkdown.tsx`
+   giữ nguyên (export static) nên test import trực tiếp vẫn pass.
+2. **motion → LazyMotion strict + `m` + domAnimation async**: mọi `motion.*`
+   → `m.*` (App, ChatMessageList, AssessmentPanel, SkillRadar,
+   SelectionTranslator). Features bundle tách file `utils/motionFeatures.ts`
+   thành async chunk 35.94 kB (gzip 13.62), preload lúc app boot. `strict` =
+   dev throw nếu ai import `motion` full trở lại. motion-dom trong initial
+   graph: 324 kB → 102 kB (unminified).
+3. **LibraryPanel (27.60) / SettingsModal (17.34) → async chunks**: 2 modal
+   chỉ mở theo user action, `Suspense fallback={null}`.
+
+## Kết quả bundle
+
+| | Before | After |
+|---|---|---|
+| Initial chunk | 657.60 kB (gzip 204.19) | **366.87 kB** (gzip 117.28) |
+| Async chunks | 0 | MessageMarkdown 167.06 · motionFeatures 35.94 · LibraryPanel 27.60 · SettingsModal 17.34 |
+| Vite >500 kB warning | Có | **Không còn** |
+
+Initial chunk −44% (minified), −43% gzip. Tổng bytes tải lần đầu gần như tương
+đương (chunk markdown/motion-features/modals fetch song song, non-blocking) —
+mục tiêu chính là giảm parse/eval trên critical path + hết warning.
+
+## Verify
+
+- [x] `tsc --noEmit` pass
+- [x] vitest **41/41** pass (MessageMarkdown test import trực tiếp module → không bị ảnh hưởng bởi lazy wrapper)
+- [x] `vite build` — không còn chunk warning; preview smoke-test OK
+- [x] `eslint` changed files — 0 errors/warnings · `node --check` server OK
+
+## Remaining risks (đọc tiếp ở đợt sau)
+
+- Pre-features animation gap (chỉ mạng rất chậm): `m` component trước khi
+  `motionFeatures` chunk resolve sẽ render trạng thái final không animate, rồi
+  re-animate một lần khi features gắn vào. Đã giảm thiểu bằng preload lúc
+  module-eval; rủi ro chỉ còn trên mạng chậm, không crash.
+- `motionFeatures.ts` phải giữ export từ `motion/react` (không hardcode path
+  dist) — nếu đổi package motion nhớ giữ file này tách riêng để chunk split.
+- API key vẫn plaintext trong localStorage (đã cảnh báo trong Settings); giải pháp triệt để là proxy server-side.
+- Server không có rate-limit — chấp nhận được vì local-first + CORS allowlist.
