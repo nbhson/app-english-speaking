@@ -88,6 +88,12 @@ function buildHeaders(config: AIConfig, extra?: Record<string, string>): Record<
   return headers;
 }
 
+async function assertOk(res: Response, label: string): Promise<void> {
+  if (res.ok) return;
+  const errText = await res.text().catch(() => '');
+  throw new Error(`${label} failed (${res.status}): ${errText.slice(0, 300)}`);
+}
+
 /**
  * Stream a chat completion. Calls onDelta with each text chunk as it arrives
  * and resolves with the full assistant text when done.
@@ -107,10 +113,7 @@ export async function chatStream(
     signal,
   });
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Chat failed (${res.status}): ${errText.slice(0, 300)}`);
-  }
+  await assertOk(res, 'Chat');
   if (!res.body) throw new Error('Chat failed: empty response body');
 
   const reader = res.body.getReader();
@@ -185,10 +188,7 @@ export async function chatOnce(config: AIConfig, messages: ChatMessage[], signal
     body: JSON.stringify({ model: config.model, messages, stream: false }),
     signal,
   });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Chat failed (${res.status}): ${errText.slice(0, 300)}`);
-  }
+  await assertOk(res, 'Chat');
   const data = await res.json();
   return data.choices?.[0]?.message?.content ?? '';
 }
@@ -203,10 +203,7 @@ export async function transcribe(config: AIConfig, blob: Blob): Promise<string> 
   if (config.apiKey) headers['Authorization'] = `Bearer ${config.apiKey}`;
 
   const res = await fetch(url, { method: 'POST', headers, body: form });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`STT failed (${res.status}): ${errText.slice(0, 300)}`);
-  }
+  await assertOk(res, 'STT');
   const data = await res.json();
   return data.text || '';
 }
@@ -220,10 +217,7 @@ export async function speech(config: AIConfig, text: string, signal?: AbortSigna
     body: JSON.stringify({ model: config.ttsModel, input: text, voice: config.ttsVoice }),
     signal,
   });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`TTS failed (${res.status}): ${errText.slice(0, 300)}`);
-  }
+  await assertOk(res, 'TTS');
   return res.blob();
 }
 
