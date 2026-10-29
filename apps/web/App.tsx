@@ -130,6 +130,8 @@ const App: React.FC = () => {
   const [xp, setXp] = useState(() => totalXP());
   const [copiedAll, setCopiedAll] = useState(false);
   const [canReplay, setCanReplay] = useState(false);
+  // Bump khi Library đóng → Header tính lại badge SRS due (F6).
+  const [libraryEpoch, setLibraryEpoch] = useState(0);
   // Screen-reader announcement for finalized coach replies (aria-live).
   const [announce, setAnnounce] = useState('');
   // F2: first-run onboarding tour (replayable from Settings).
@@ -645,6 +647,8 @@ const App: React.FC = () => {
       return;
     }
     const result = await translatePhrase(configRef.current, entry.text);
+    // null = network/API failure — announce (aria-live) thay vì im lặng tuyệt đối.
+    if (!result) setAnnounce('Không dịch được câu này. Kiểm tra kết nối AI rồi thử lại.');
     setTranscriptions((prev) => prev.map((t) => (t.id === entry.id ? { ...t, translation: result || undefined } : t)));
   };
 
@@ -681,6 +685,7 @@ const App: React.FC = () => {
           toggleDarkMode={toggleDarkMode}
           onOpenSettings={() => setShowSettings(true)}
           onOpenLibrary={() => setShowLibrary(true)}
+          refreshSignal={libraryEpoch}
         />
         <SelectionTranslator config={config} />
         {!browserSTT && (
@@ -965,7 +970,7 @@ const App: React.FC = () => {
             onReplayTour={() => { setShowSettings(false); setShowTour(true); }}
           />
         )}
-        {showLibrary && <LibraryPanel config={config} onClose={() => { setShowLibrary(false); setStreak(getStreak()); setXp(totalXP()); }} onPractice={(mode, prefill) => {
+        {showLibrary && <LibraryPanel config={config} onClose={() => { setShowLibrary(false); setStreak(getStreak()); setXp(totalXP()); setLibraryEpoch((v) => v + 1); }} onPractice={(mode, prefill) => {
           setShowLibrary(false);
           if (mode === AppMode.CUSTOM) setCustomTopic(prefill);
           if (mode === AppMode.DAILY) setInputText(prefill);

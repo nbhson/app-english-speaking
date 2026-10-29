@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Moon, Sun, Settings, Library } from 'lucide-react';
 import { serverAvailable } from '../utils/serverStore';
+import { countDueReviews } from '../utils/storage';
 
 interface Props {
   isDarkMode: boolean;
   toggleDarkMode: () => void;
   onOpenSettings: () => void;
   onOpenLibrary?: () => void;
+  /** Bump khi Library đóng (sau khi user ôn thẻ) để tính lại badge SRS due. */
+  refreshSignal?: number;
 }
 
 const iconBtn =
@@ -24,8 +27,11 @@ export const Header: React.FC<Props> = ({
   toggleDarkMode,
   onOpenSettings,
   onOpenLibrary,
+  refreshSignal = 0,
 }) => {
   const [libraryOnline, setLibraryOnline] = useState<boolean | null>(null);
+  // F6: SRS due badge — tổng mistakes/vocab đến hạn ôn (đếm 30s/lần + khi Library đóng).
+  const [due, setDue] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -41,6 +47,14 @@ export const Header: React.FC<Props> = ({
       window.clearInterval(id);
     };
   }, []);
+
+  useEffect(() => {
+    try {
+      setDue(countDueReviews().total);
+    } catch {
+      /* storage blocked */
+    }
+  }, [refreshSignal]);
 
   return (
   <div className="shrink-0 sticky top-0 z-20 w-full max-w-[1600px] mx-auto px-2 sm:px-4 md:px-6 pt-2 sm:pt-4 md:pt-6">
@@ -59,11 +73,19 @@ export const Header: React.FC<Props> = ({
     <div className="flex items-center gap-2 shrink-0">
       <button
         onClick={onOpenLibrary}
-        className={iconBtnIdle}
-        aria-label="Open learning library"
-        title="My Library (history, mistakes, vocab)"
+        className={`${iconBtnIdle} relative`}
+        aria-label={due > 0 ? `Open learning library — ${due} cards due for review` : 'Open learning library'}
+        title={due > 0 ? `My Library — 🐞🔖 ${due} thẻ đến hạn ôn (SRS)` : 'My Library (history, mistakes, vocab)'}
       >
         <Library size={18} />
+        {due > 0 && (
+          <span
+            className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-bold shadow"
+            aria-hidden
+          >
+            {due > 99 ? '99+' : due}
+          </span>
+        )}
       </button>
       <button
         onClick={onOpenSettings}

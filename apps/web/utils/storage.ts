@@ -3,7 +3,7 @@
 
 import type { AIConfig } from './api';
 import { DEFAULT_CONFIG } from './api';
-import { scheduleNextReview } from './srs';
+import { scheduleNextReview, isDue } from './srs';
 import type { MistakeEntry, ProgressDay, SessionRecord, TaskEntry, TranscriptionEntry, VocabEntry } from '../types';
 import { uid } from './uid';
 
@@ -212,6 +212,13 @@ export function getStreak(): number {
 
 export function totalXP(): number {
   return getProgress().reduce((s, d) => s + d.xp, 0);
+}
+
+/** F6 — số thẻ SRS đến hạn ôn (mistakes chưa mastered + vocab). */
+export function countDueReviews(): { mistakes: number; vocab: number; total: number } {
+  const mistakes = getMistakes().filter((m) => !m.mastered && isDue(m.nextReview)).length;
+  const vocab = getVocab().filter((v) => isDue(v.nextReview)).length;
+  return { mistakes, vocab, total: mistakes + vocab };
 }
 
 // --- Weekly goal (F1) + practice stats (F3) ---
