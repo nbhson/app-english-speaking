@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { AIConfig, DEFAULT_CONFIG, saveConfig, chatOnce } from '../utils/api';
-import { X, Save, RotateCcw, Plug, Mic, Volume2, MessageSquare, Play, Loader2, User, SlidersHorizontal, FileText, Layers, Wifi } from 'lucide-react';
+import { X, Save, RotateCcw, Plug, Mic, Volume2, MessageSquare, Play, Loader2, User, SlidersHorizontal, FileText, Layers, Wifi, HelpCircle } from 'lucide-react';
 import { englishVoices, voiceQualityScore } from '../utils/browser';
 import { getProfiles, saveProfiles, getActiveProfileId, type NamedProfile } from '../utils/storage';
-import { inputCls, toggleCls, btnPrimary } from '../utils/ui';
+import { inputCls, toggleCls, btnPrimary, btnSecondary } from '../utils/ui';
 import { uid } from '../utils/uid';
 import { speakPreview } from '../utils/tts';
 import { useModalFocus } from '../hooks/useModalFocus';
@@ -39,6 +39,8 @@ interface Props {
   initial: AIConfig;
   onClose: () => void;
   onSaved: (cfg: AIConfig) => void;
+  /** Replay the F2 onboarding tour (Settings → Advanced). */
+  onReplayTour?: () => void;
 }
 
 const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode }> = ({ label, hint, children }) => (
@@ -53,7 +55,7 @@ const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode 
 // local copies below were removed to keep spacing/radius/focus consistent
 // across Settings, Library and modals.
 
-export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) => {
+export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved, onReplayTour }) => {
   const [cfg, setCfg] = useState<AIConfig>({ ...initial });
   const [testingVoice, setTestingVoice] = useState(false);
   const [testVoiceError, setTestVoiceError] = useState<string | null>(null);
@@ -343,6 +345,11 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
               <SlidersHorizontal size={14} className="text-blue-500" /> Advanced
             </h3>
             <p className="text-[11px] text-slate-400 flex items-start gap-1.5"><FileText size={12} className="mt-0.5 shrink-0" /> API key lưu plaintext trong localStorage — chỉ dùng gateway local hoặc page HTTPS, tránh XSS.</p>
+            {onReplayTour && (
+              <button onClick={onReplayTour} className={`${btnSecondary} mt-3`}>
+                <HelpCircle size={13} /> Xem lại hướng dẫn sử dụng
+              </button>
+            )}
           </div>
         </div>
 

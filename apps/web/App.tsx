@@ -20,6 +20,7 @@ import { ChatMessageList } from './components/ChatMessageList';
 import { ControlBar } from './components/ControlBar';
 import { StartScreen } from './components/StartScreen';
 import { AssessmentPanel } from './components/AssessmentPanel';
+import { Onboarding, isOnboarded } from './components/Onboarding';
 import { AIConfigProvider } from './context/AIConfigContext';
 import { INITIAL_ASSESSMENT, parseAssessmentBlock } from './utils/assessment';
 import { analyzeSpeech, avgSkill, xpForSession } from './utils/speechMetrics';
@@ -131,6 +132,8 @@ const App: React.FC = () => {
   const [canReplay, setCanReplay] = useState(false);
   // Screen-reader announcement for finalized coach replies (aria-live).
   const [announce, setAnnounce] = useState('');
+  // F2: first-run onboarding tour (replayable from Settings).
+  const [showTour, setShowTour] = useState(() => (typeof window !== 'undefined' ? !isOnboarded() : false));
 
   // Refs that async callbacks read to avoid stale closures.
   const configRef = useRef(config);
@@ -954,7 +957,14 @@ const App: React.FC = () => {
           </button>
         )}
 
-        {showSettings && <SettingsModal initial={config} onClose={() => setShowSettings(false)} onSaved={(cfg) => setConfig(cfg)} />}
+        {showSettings && (
+          <SettingsModal
+            initial={config}
+            onClose={() => setShowSettings(false)}
+            onSaved={(cfg) => setConfig(cfg)}
+            onReplayTour={() => { setShowSettings(false); setShowTour(true); }}
+          />
+        )}
         {showLibrary && <LibraryPanel config={config} onClose={() => { setShowLibrary(false); setStreak(getStreak()); setXp(totalXP()); }} onPractice={(mode, prefill) => {
           setShowLibrary(false);
           if (mode === AppMode.CUSTOM) setCustomTopic(prefill);
@@ -965,6 +975,9 @@ const App: React.FC = () => {
             setSession((prev) => ({ ...prev, mode }));
           }
         }} />}
+
+        {/* F2: first-run onboarding tour — replayable from Settings → Advanced. */}
+        {showTour && <Onboarding onDone={() => setShowTour(false)} />}
       </div>
     </AIConfigProvider>
   );
