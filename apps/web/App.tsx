@@ -1,5 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
+// LazyMotion + m (+ domAnimation): chỉ bundle engine animation cơ bản, bỏ
+// layout-projection/drag của motion-dom → initial chunk nhỏ hơn đáng kể.
+// strict = nếu ai import `motion` (full) sẽ throw ngay ở dev.
+import { LazyMotion, AnimatePresence, m } from 'motion/react';
 import { TriangleAlert, ChevronsLeft, ChevronsRight, X, PanelLeft, PanelRight } from 'lucide-react';
 import { AppMode, SessionState, TranscriptionEntry } from './types';
 import { SYSTEM_INSTRUCTION, DIFFICULTY_PROMPT, PERSONA_PROMPT } from './constants';
@@ -11,8 +14,13 @@ import {
   translatePhrase,
   transcribe,
 } from './utils/api';
-import { SettingsModal } from './components/SettingsModal';
-import { LibraryPanel } from './components/LibraryPanel';
+// Heavy, user-triggered surfaces — split into async chunks (loaded on first open).
+const LibraryPanel = React.lazy(() =>
+  import('./components/LibraryPanel').then((mod) => ({ default: mod.LibraryPanel })),
+);
+const SettingsModal = React.lazy(() =>
+  import('./components/SettingsModal').then((mod) => ({ default: mod.SettingsModal })),
+);
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { SelectionTranslator } from './components/SelectionTranslator';
@@ -41,6 +49,10 @@ import { useSpeechRecognition } from './hooks/useSpeechRecognition';
 
 // Stable, non-render-time clock (React Hooks purity-friendly).
 const now = () => Date.now();
+
+// Warm-up motion feature chunk ngay lúc app boot (non-blocking): trước khi
+// user tương tác với element có animation, features gần như luôn đã sẵn sàng.
+void import('./utils/motionFeatures');
 
 const FIRST_SCENARIO: Record<AppMode, string> = {
   [AppMode.DAILY]: 'weekend',
@@ -676,6 +688,7 @@ const App: React.FC = () => {
   };
 
   return (
+    <LazyMotion features={() => import('./utils/motionFeatures').then((mod) => mod.domAnimation)} strict>
     <AIConfigProvider config={config}>
       <div
         className={`flex flex-col h-dvh overflow-hidden transition-colors ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} selection:bg-blue-600 selection:text-white`}
@@ -720,7 +733,7 @@ const App: React.FC = () => {
           {/* Desktop Sidebar */}
           <AnimatePresence>
             {showSidebar && (
-              <motion.nav
+              <m.nav
                 initial={{ width: 0, opacity: 0, x: -20 }}
                 animate={{ width: 280, opacity: 1, x: 0 }}
                 exit={{ width: 0, opacity: 0, x: -20 }}
@@ -743,7 +756,7 @@ const App: React.FC = () => {
                     <Sidebar activeMode={session.mode} onChangeMode={changeMode} />
                   </div>
                 </div>
-              </motion.nav>
+              </m.nav>
             )}
           </AnimatePresence>
 
@@ -751,7 +764,7 @@ const App: React.FC = () => {
           <AnimatePresence>
             {isMobileSidebarOpen && (
               <>
-                <motion.div
+                <m.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -759,7 +772,7 @@ const App: React.FC = () => {
                   onClick={() => setIsMobileSidebarOpen(false)}
                   aria-hidden="true"
                 />
-                <motion.nav
+                <m.nav
                   initial={{ x: -300, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: -300, opacity: 0 }}
@@ -777,7 +790,7 @@ const App: React.FC = () => {
                     </button>
                   </div>
                   <Sidebar activeMode={session.mode} onChangeMode={changeMode} />
-                </motion.nav>
+                </m.nav>
               </>
             )}
           </AnimatePresence>
@@ -892,7 +905,7 @@ const App: React.FC = () => {
           {/* Assessment Panel (Right Side) - Desktop */}
           <AnimatePresence>
             {showAssessment && (
-              <motion.aside
+              <m.aside
                 initial={{ width: 0, opacity: 0, x: 20 }}
                 animate={{ width: 420, opacity: 1, x: 0 }}
                 exit={{ width: 0, opacity: 0, x: 20 }}
@@ -915,7 +928,7 @@ const App: React.FC = () => {
                     <AssessmentPanel assessment={assessment} hasData={hasAssessmentData} duration={duration} avgWpm={avgWpm} fillerTotal={fillerTotal} turns={userTurns} streak={streak} xp={xp} mode={session.mode} />
                   </div>
                 </div>
-              </motion.aside>
+              </m.aside>
             )}
           </AnimatePresence>
         </main>
@@ -923,7 +936,7 @@ const App: React.FC = () => {
         {/* Mobile Assessment Drawer — collapsible bottom sheet */}
         <AnimatePresence>
           {showAssessment && (
-            <motion.div
+            <m.div
               initial={{ y: 300, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 300, opacity: 0 }}
@@ -947,7 +960,7 @@ const App: React.FC = () => {
               <div className="px-1 pb-4">
                 <AssessmentPanel assessment={assessment} hasData={hasAssessmentData} duration={duration} avgWpm={avgWpm} fillerTotal={fillerTotal} turns={userTurns} streak={streak} xp={xp} mode={session.mode} />
               </div>
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
 
@@ -963,14 +976,16 @@ const App: React.FC = () => {
         )}
 
         {showSettings && (
-          <SettingsModal
-            initial={config}
-            onClose={() => setShowSettings(false)}
-            onSaved={(cfg) => setConfig(cfg)}
-            onReplayTour={() => { setShowSettings(false); setShowTour(true); }}
-          />
+          <Suspense fallback={null}>
+            <SettingsModal
+              initial={config}
+              onClose={() => setShowSettings(false)}
+              onSaved={(cfg) => setConfig(cfg)}
+              onReplayTour={() => { setShowSettings(false); setShowTour(true); }}
+            />
+          </Suspense>
         )}
-        {showLibrary && <LibraryPanel config={config} onClose={() => { setShowLibrary(false); setStreak(getStreak()); setXp(totalXP()); setLibraryEpoch((v) => v + 1); }} onPractice={(mode, prefill) => {
+        {showLibrary && <Suspense fallback={null}><LibraryPanel config={config} onClose={() => { setShowLibrary(false); setStreak(getStreak()); setXp(totalXP()); setLibraryEpoch((v) => v + 1); }} onPractice={(mode, prefill) => {
           setShowLibrary(false);
           if (mode === AppMode.CUSTOM) setCustomTopic(prefill);
           if (mode === AppMode.DAILY) setInputText(prefill);
@@ -979,12 +994,13 @@ const App: React.FC = () => {
             if (def) { setScenarioId(def); scenarioRef.current = def; }
             setSession((prev) => ({ ...prev, mode }));
           }
-        }} />}
+        }} /></Suspense>}
 
         {/* F2: first-run onboarding tour — replayable from Settings → Advanced. */}
         {showTour && <Onboarding onDone={() => setShowTour(false)} />}
       </div>
     </AIConfigProvider>
+    </LazyMotion>
   );
 };
 

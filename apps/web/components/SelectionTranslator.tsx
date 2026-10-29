@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Languages, X } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { m, AnimatePresence } from 'motion/react';
 import type { AIConfig } from '../utils/api';
 import { translatePhrase } from '../utils/api';
 
@@ -80,7 +80,7 @@ export const SelectionTranslator: React.FC<Props> = ({ config }) => {
       aria-label="Phrase translator"
     >
       <AnimatePresence>
-        <motion.div
+        <m.div
           initial={{ opacity: 0, scale: 0.9, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 10 }}
@@ -121,7 +121,7 @@ export const SelectionTranslator: React.FC<Props> = ({ config }) => {
             </div>
           )}
           <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900/95" />
-        </motion.div>
+        </m.div>
       </AnimatePresence>
     </div>
   );

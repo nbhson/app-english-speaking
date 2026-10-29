@@ -1,9 +1,30 @@
-import React from 'react';
-import { motion } from 'motion/react';
+import React, { Suspense } from 'react';
+import { m } from 'motion/react';
 import { Languages, Sparkles, Loader2 } from 'lucide-react';
 import { AppMode, TranscriptionEntry } from '../types';
-import { MessageMarkdown } from './MessageMarkdown';
 import { CorrectionCard } from './CorrectionCard';
+
+// react-markdown + remark-gfm (micromark/mdast ecosystem) là một trong hai deps
+// nặng nhất — tách thành async chunk, preload ngay khi app mount (non-blocking)
+// nên message đầu tiên hầu như luôn sẵn trước khi stream trả về.
+const MessageMarkdown = React.lazy(() =>
+  import('./MessageMarkdown').then((mod) => ({ default: mod.MessageMarkdown })),
+);
+// Warm-up: fetch + parse song song với first paint, không block critical path.
+void import('./MessageMarkdown');
+
+/** Fallback gần giống markdown render (plain text) — tránh layout flash. */
+const MarkdownFallback: React.FC<{ text: string; tone?: 'coach' | 'user' }> = ({ text, tone }) => (
+  <div className={tone === 'user' ? 'msg-user' : 'msg-coach'}>
+    <p className="text-sm md:text-[15px] leading-relaxed mb-2 last:mb-0 break-words whitespace-pre-wrap">{text}</p>
+  </div>
+);
+
+const LazyMarkdown: React.FC<{ text: string; tone?: 'coach' | 'user' }> = ({ text, tone = 'coach' }) => (
+  <Suspense fallback={<MarkdownFallback text={text} tone={tone} />}>
+    <MessageMarkdown text={text} tone={tone} />
+  </Suspense>
+);
 
 /**
  * Language of a message bubble for assistive tech (screen readers pick the
@@ -45,7 +66,7 @@ function renderMessageText(
   return parts.map((part, partIdx) => {
     if (typeof part !== 'string') return part;
     if (!part.trim()) return null;
-    return <MessageMarkdown key={partIdx} text={part} tone={tone} />;
+    return <LazyMarkdown key={partIdx} text={part} tone={tone} />;
   });
 }
 
@@ -115,7 +136,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
             </div>
 
             {t.translation && (
-              <motion.div
+              <m.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 className={`mt-3 pt-3 border-t ${
@@ -129,8 +150,8 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
                   <Sparkles size={10} />
                   <span>Vietnamese Translation</span>
                 </div>
-                <MessageMarkdown text={t.translation} tone={t.role === 'user' ? 'user' : 'coach'} />
-              </motion.div>
+                <LazyMarkdown text={t.translation} tone={t.role === 'user' ? 'user' : 'coach'} />
+              </m.div>
             )}
 
             {t.role === 'user' && (t.wpm || t.fillerCount) && (

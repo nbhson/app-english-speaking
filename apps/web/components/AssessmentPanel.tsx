@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion } from 'motion/react';
+import { m } from 'motion/react';
 import { Search } from 'lucide-react';
 import type { SessionAssessment } from '../types';
 import { AppMode } from '../types';
@@ -50,7 +50,7 @@ export const AssessmentBar: React.FC<{ label: string; value: number }> = ({ labe
             backgroundSize: '4px 4px',
           }}
         />
-        <motion.div
+        <m.div
           initial={{ width: 0 }}
           animate={{ width: `${percentage}%` }}
           transition={{ duration: 1, ease: 'easeOut' }}

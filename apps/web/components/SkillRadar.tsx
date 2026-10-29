@@ -2,7 +2,7 @@
 // Rendered inside AssessmentPanel next to the bars for an at-a-glance profile.
 
 import React from 'react';
-import { motion } from 'motion/react';
+import { m } from 'motion/react';
 import type { SessionAssessment } from '../types';
 
 const SKILL_LABELS = [
@@ -87,7 +87,7 @@ export const SkillRadar: React.FC<{ assessment: SessionAssessment; className?: s
         );
       })}
       {/* value polygon */}
-      <motion.polygon
+      <m.polygon
         points={polygon}
         initial={{ opacity: 0, scale: 0.6 }}
         animate={{ opacity: 1, scale: 1 }}
