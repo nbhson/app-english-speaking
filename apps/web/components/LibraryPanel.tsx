@@ -21,6 +21,23 @@ import { isDue, dueInLabel } from '../utils/srs';
 import { speakAmbient } from '../utils/tts';
 import { useModalFocus } from '../hooks/useModalFocus';
 import { useToast } from './Toast';
+import { MODE_CONFIGS } from '../modes';
+import { inputCls, toggleCls, btnGhost, cardCls } from '../utils/ui';
+
+/** Safe mode chip for history rows — imported/legacy rows may carry unknown enums. */
+const ModeChip: React.FC<{ mode: string }> = ({ mode }) => {
+  const mc = MODE_CONFIGS[mode as AppMode];
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+        mc?.accent ?? 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
+      }`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${mc?.dot ?? 'bg-slate-400'}`} aria-hidden />
+      {mc ? mc.title : mode}
+    </span>
+  );
+};
 
 interface Props {
   config: AIConfig;
@@ -155,7 +172,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${tab === t ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}
+              className={toggleCls(tab === t)}
             >
               {label}
             </button>
@@ -170,7 +187,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Tìm trong Library… (session, lỗi, từ vựng, task)"
-              className="w-full text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-8 pr-8 py-2 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+              className={`${inputCls} pl-8 pr-8`}
               aria-label="Search library"
             />
             {query && (
@@ -216,21 +233,21 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                 <span className="flex-1" />
                 <button
                   onClick={() => downloadText(`fluentdev-backup-${new Date().toISOString().slice(0, 10)}.json`, exportLibrary())}
-                  className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-300"
+                  className={btnGhost}
                   title="Backup toàn bộ Library ra file JSON"
                 >
                   <FileJson size={11} /> Export JSON
                 </button>
                 <button
                   onClick={() => downloadText(`fluentdev-anki-${new Date().toISOString().slice(0, 10)}.tsv`, exportAnkiTSV())}
-                  className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-300"
+                  className={btnGhost}
                   title="Xuất mistakes + vocab ra TSV để import vào Anki"
                 >
                   <Download size={11} /> Anki TSV
                 </button>
                 <button
                   onClick={() => fileRef.current?.click()}
-                  className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-300"
+                  className={btnGhost}
                   title="Import file backup JSON (merge, không ghi đè)"
                 >
                   <Upload size={11} /> Import
@@ -262,10 +279,15 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
               </div>
               {importError && <p className="text-[11px] text-red-500">{importError}</p>}
               {fSessions.map((s) => (
-                <div key={s.id} className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4">
+                <div key={s.id} className={`${cardCls} p-4`}>
                   <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="text-sm font-bold dark:text-white">
-                      {s.mode} · {new Date(s.startedAt).toLocaleString()} · {Math.round(Number(s.durationSec) / 60)}m · {s.turns} turns · ⭐ {Number.isFinite(Number(s.avgScore)) ? Number(s.avgScore).toFixed(1) : '—'}
+                    <div className="flex items-center gap-2 flex-wrap text-sm font-bold dark:text-white">
+                      <ModeChip mode={s.mode} />
+                      <span>·</span>
+                      <span>{new Date(s.startedAt).toLocaleString()}</span>
+                      <span>· {Math.round(Number(s.durationSec) / 60)}m</span>
+                      <span>· {s.turns} turns</span>
+                      <span>· ⭐ {Number.isFinite(Number(s.avgScore)) ? Number(s.avgScore).toFixed(1) : '—'}</span>
                     </div>
                     <button
                       onClick={() => downloadText(`fluentdev-${s.mode}-${s.id.slice(-6)}.md`, transcriptToMarkdown(s.transcript, s.mode))}
@@ -450,7 +472,6 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                           <p className={`text-[11px] mt-0.5 ${isOverdue ? 'text-red-500 font-bold' : isDueSoon ? 'text-amber-500' : 'text-slate-400'}`}>
                             {isOverdue ? '⚠️ Overdue: ' : 'Due: '}
                             {new Date(t.dueAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                            {isOverdue && !t.dueAt ? '' : ''}
                           </p>
                         )}
                         {t.completed && t.completedAt && (

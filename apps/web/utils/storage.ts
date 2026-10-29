@@ -15,7 +15,6 @@ const K = {
   tasks: 'fluentdev-tasks-v1',
   profiles: 'fluentdev-profiles-v1',
   activeProfile: 'fluentdev-active-profile-v1',
-  streak: 'fluentdev-streak-v1',
 };
 
 function read<T>(key: string, fallback: T): T {
@@ -189,7 +188,6 @@ export function logSessionProgress(durationSec: number, xp: number): { days: Pro
   }
   write(K.progress, days.slice(0, 90));
   const streak = calcStreak(days);
-  write(K.streak, { streak, updatedAt: Date.now() });
   return { days, streak };
 }
 

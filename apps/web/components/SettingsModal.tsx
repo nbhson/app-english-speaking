@@ -3,6 +3,7 @@ import { AIConfig, DEFAULT_CONFIG, saveConfig, chatOnce } from '../utils/api';
 import { X, Save, RotateCcw, Plug, Mic, Volume2, MessageSquare, Play, Loader2, User, SlidersHorizontal, FileText, Layers, Wifi } from 'lucide-react';
 import { englishVoices, voiceQualityScore } from '../utils/browser';
 import { getProfiles, saveProfiles, getActiveProfileId, type NamedProfile } from '../utils/storage';
+import { inputCls, toggleCls, btnPrimary } from '../utils/ui';
 import { uid } from '../utils/uid';
 import { speakPreview } from '../utils/tts';
 import { useModalFocus } from '../hooks/useModalFocus';
@@ -48,16 +49,9 @@ const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode 
   </label>
 );
 
-const inputCls =
-  'w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm ' +
-  'focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white';
-
-const toggleCls = (active: boolean) =>
-  `px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-    active
-      ? 'bg-blue-600 text-white shadow'
-      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-  }`;
+// inputCls / toggleCls come from utils/ui.ts (shared design tokens) — the
+// local copies below were removed to keep spacing/radius/focus consistent
+// across Settings, Library and modals.
 
 export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) => {
   const [cfg, setCfg] = useState<AIConfig>({ ...initial });
@@ -334,7 +328,7 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
                   </Field>
                 </>
               )}
-              <button onClick={handleTestVoice} disabled={testingVoice} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 transition-all">
+              <button onClick={handleTestVoice} disabled={testingVoice} className={btnPrimary}>
                 {testingVoice ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
                 {testingVoice ? 'Testing…' : 'Test voice'}
               </button>
@@ -358,7 +352,7 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved }) =>
           </button>
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">Cancel</button>
-            <button onClick={handleSave} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 shadow transition-all">
+            <button onClick={handleSave} className={btnPrimary}>
               <Save size={14} /> Save & Apply
             </button>
           </div>
