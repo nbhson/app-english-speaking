@@ -49,11 +49,20 @@ export const Header: React.FC<Props> = ({
   }, []);
 
   useEffect(() => {
-    try {
-      setDue(countDueReviews().total);
-    } catch {
-      /* storage blocked */
-    }
+    let alive = true;
+    const recount = () => {
+      try {
+        setDue(countDueReviews().total);
+      } catch {
+        /* storage blocked */
+      }
+    };
+    recount();
+    const id = window.setInterval(recount, 30000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
   }, [refreshSignal]);
 
   return (
