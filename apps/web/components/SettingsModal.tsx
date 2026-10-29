@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { AIConfig, DEFAULT_CONFIG, saveConfig, chatOnce } from '../utils/api';
-import { X, Save, RotateCcw, Plug, Mic, Volume2, MessageSquare, Play, Loader2, User, SlidersHorizontal, FileText, Layers, Wifi, HelpCircle } from 'lucide-react';
+import { AIConfig, DEFAULT_CONFIG, saveConfig, chatOnce, proxyStatus } from '../utils/api';
+import { X, Save, RotateCcw, Plug, Mic, Volume2, MessageSquare, Play, Loader2, User, SlidersHorizontal, FileText, Layers, Wifi, HelpCircle, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { englishVoices, voiceQualityScore } from '../utils/browser';
 import { getProfiles, saveProfiles, getActiveProfileId, type NamedProfile } from '../utils/storage';
 import { inputCls, toggleCls, btnPrimary, btnSecondary } from '../utils/ui';
@@ -65,10 +65,24 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved, onRe
   const [profiles, setProfiles] = useState<NamedProfile[]>(() => getProfiles());
   const [activeId, setActiveId] = useState(() => getActiveProfileId());
   const [newName, setNewName] = useState('');
+  // Proxy readiness — keeps the UI honest about which mode can actually work.
+  const [proxy, setProxy] = useState<{ online: boolean; hasKey: boolean } | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Focus trap + Escape + body scroll lock + focus restore (a11y)
   useModalFocus(dialogRef, onClose);
+
+  // Ping the Library-server proxy so the mode indicator reflects reality
+  // (re-checked whenever proxy mode is selected).
+  useEffect(() => {
+    let alive = true;
+    proxyStatus().then((s) => {
+      if (alive) setProxy(s ? { online: true, hasKey: s.hasKey } : { online: false, hasKey: false });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [cfg.useServerProxy]);
 
   const set = <K extends keyof AIConfig>(key: K, value: AIConfig[K]) =>
     setCfg(prev => ({ ...prev, [key]: value }));
@@ -195,6 +209,39 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved, onRe
             </div>
           </div>
 
+          {/* Connection mode */}
+          <div>
+            <h3 className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200 mb-3">
+              <ShieldCheck size={14} className="text-blue-500" /> Connection mode
+            </h3>
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              <button className={toggleCls(!!cfg.useServerProxy)} onClick={() => set('useServerProxy', true)}>
+                Server proxy (recommended)
+              </button>
+              <button className={toggleCls(!cfg.useServerProxy)} onClick={() => set('useServerProxy', false)}>
+                Direct (BYOK)
+              </button>
+            </div>
+            {cfg.useServerProxy ? (
+              <div className="space-y-1.5">
+                <p className={`text-[11px] flex items-center gap-1.5 ${proxy?.online ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                  {proxy === null ? <Loader2 size={12} className="animate-spin" /> : proxy.online ? <ShieldCheck size={12} /> : <ShieldAlert size={12} className="shrink-0" />}
+                  {proxy === null
+                    ? 'Checking local server proxy…'
+                    : proxy.online
+                      ? 'Local server proxy: online.'
+                      : 'Local server proxy: offline — start apps/server (npm run dev) or switch to Direct mode.'}
+                </p>
+                {proxy?.online && !proxy.hasKey && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">⚠️ No API key in server env (AI_PROXY_API_KEY) — only gateways that need no auth will work.</p>
+                )}
+                <p className="text-[11px] text-slate-400">Key lives in the server environment — nothing is stored in this browser. Upstream: AI_PROXY_BASE_URL.</p>
+              </div>
+            ) : (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-start gap-1.5"><ShieldAlert size={12} className="mt-0.5 shrink-0" /> Direct mode sends requests straight to the gateway with the key below, stored plaintext in this browser. Use only for serverless setups.</p>
+            )}
+          </div>
+
           <div className="h-px bg-slate-100 dark:bg-slate-800" />
 
           {/* Endpoint */}
@@ -203,12 +250,18 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved, onRe
               <MessageSquare size={14} className="text-blue-500" /> Chat Model (via Gateway)
             </h3>
             <div className="space-y-3">
-              <Field label="Base URL" hint="OpenAI-compatible endpoint, e.g. https://api.openai.com/v1">
+              <Field label="Base URL" hint={cfg.useServerProxy ? 'Proxy mode: used as the server-side AI_PROXY_BASE_URL reference; the server env decides the real upstream.' : 'OpenAI-compatible endpoint, e.g. https://api.openai.com/v1'}>
                 <input className={inputCls} value={cfg.baseUrl} onChange={e => set('baseUrl', e.target.value)} placeholder={DEFAULT_CONFIG.baseUrl} />
               </Field>
-              <Field label="API Key" hint="Bearer token. Leave empty if your gateway doesn't require one.">
-                <input className={inputCls} type="password" value={cfg.apiKey} onChange={e => set('apiKey', e.target.value)} placeholder="sk-... (optional)" />
-              </Field>
+              {cfg.useServerProxy ? (
+                <Field label="API Key" hint="Managed by the server (AI_PROXY_API_KEY env) — not stored in this browser.">
+                  <input className={`${inputCls} opacity-60`} type="password" value="•••••••• (server-side)" disabled aria-label="API key is managed server-side" />
+                </Field>
+              ) : (
+                <Field label="API Key (stored in this browser — BYOK)" hint="Bearer token, kept in localStorage plaintext. Leave empty if your gateway doesn't require one.">
+                  <input className={inputCls} type="password" value={cfg.apiKey} onChange={e => set('apiKey', e.target.value)} placeholder="sk-... (optional)" />
+                </Field>
+              )}
               <Field label="Model" hint="Any model exposed by the gateway, e.g. gemini/gemini-3-flash-preview">
                 <input className={inputCls} list="model-suggestions" value={cfg.model} onChange={e => set('model', e.target.value)} placeholder="gemini/gemini-3-flash-preview" />
                 <datalist id="model-suggestions">
@@ -344,7 +397,11 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved, onRe
             <h3 className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200 mb-2">
               <SlidersHorizontal size={14} className="text-blue-500" /> Advanced
             </h3>
-            <p className="text-[11px] text-slate-400 flex items-start gap-1.5"><FileText size={12} className="mt-0.5 shrink-0" /> API key lưu plaintext trong localStorage — chỉ dùng gateway local hoặc page HTTPS, tránh XSS.</p>
+            {cfg.useServerProxy ? (
+              <p className="text-[11px] text-slate-400 flex items-start gap-1.5"><FileText size={12} className="mt-0.5 shrink-0" /> Server proxy active: API requests go through POST /api/ai/* on the local server with the key from server env — no key in localStorage.</p>
+            ) : (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-start gap-1.5"><FileText size={12} className="mt-0.5 shrink-0" /> Direct BYOK active: API key lưu plaintext trong localStorage — chỉ dùng gateway local hoặc page HTTPS, tránh XSS.</p>
+            )}
             {onReplayTour && (
               <button onClick={onReplayTour} className={`${btnSecondary} mt-3`}>
                 <HelpCircle size={13} /> Xem lại hướng dẫn sử dụng

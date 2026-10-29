@@ -4,7 +4,7 @@
 // base URL. Defaults point at a local custom provider gateway. The chat model is the
 // "brain"; STT/TTS can run on the browser (Web Speech API) or through the custom provider.
 
-import { DEFAULT_BASE_URL } from './config';
+import { DEFAULT_BASE_URL, LIBRARY_API_URL } from './config';
 
 export interface AIConfig {
   baseUrl: string;        // e.g. http://localhost:20128/v1
@@ -22,6 +22,13 @@ export interface AIConfig {
   difficulty?: 'beginner' | 'intermediate' | 'advanced';
   persona?: 'encouraging' | 'strict' | 'professional';
   systemPromptOverride?: string; // full override of SYSTEM_INSTRUCTION
+  // --- connection mode ---
+  // true (default): all provider traffic goes through the local Library server
+  //   proxy (POST {LIBRARY_API}/api/ai/<action>) — the API key lives in the
+  //   server env and is never stored in the browser.
+  // false: direct BYOK — requests hit `baseUrl` with the key from localStorage
+  //   (plaintext; explicit opt-in for serverless usage, labeled in Settings).
+  useServerProxy?: boolean;
 }
 
 export const DEFAULT_CONFIG: AIConfig = {
@@ -39,6 +46,7 @@ export const DEFAULT_CONFIG: AIConfig = {
   difficulty: 'intermediate',
   persona: 'encouraging',
   systemPromptOverride: '',
+  useServerProxy: true,
 };
 
 const STORAGE_KEY = 'fluentdev-ai-config';
@@ -52,6 +60,13 @@ export function loadConfig(): AIConfig {
       // Migrate legacy 'omniroute' value to 'custom'
       if ((parsed.sttEngine as string) === 'omniroute') parsed.sttEngine = 'custom' as AIConfig['sttEngine'];
       if ((parsed.ttsEngine as string) === 'omniroute') parsed.ttsEngine = 'custom' as AIConfig['ttsEngine'];
+      // Proxy-mode migration: configs saved before `useServerProxy` existed.
+      // A stored plaintext key means the user was on direct BYOK — keep them
+      // on direct mode (never switch silently) and let App show a one-time
+      // notice offering the proxy. Keyless configs default to proxy mode.
+      if (parsed.useServerProxy === undefined) {
+        parsed.useServerProxy = !(typeof parsed.apiKey === 'string' && parsed.apiKey.length > 0);
+      }
       return { ...DEFAULT_CONFIG, ...parsed };
     }
   } catch (e) {
@@ -62,10 +77,14 @@ export function loadConfig(): AIConfig {
 
 export function saveConfig(cfg: AIConfig): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
-    if (cfg.apiKey) {
+    // Proxy mode: the upstream key lives in the server env — never persist it
+    // in the browser. Direct (BYOK) mode is the explicit plaintext exception.
+    const toStore: AIConfig = cfg.useServerProxy ? { ...cfg, apiKey: '' } : cfg;
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore));
+    if (!cfg.useServerProxy && cfg.apiKey) {
       console.warn(
-        'API key is stored in localStorage (plaintext). Only use with a local gateway or ensure the page is served over HTTPS and protected from XSS.'
+        'API key is stored in localStorage (plaintext) because direct BYOK mode is active. ' +
+          'Prefer the server proxy (Settings → Connection mode) so the key stays in the server env.',
       );
     }
   } catch (e) {
@@ -82,10 +101,37 @@ function baseUrl(config: AIConfig): string {
   return config.baseUrl.replace(/\/+$/, '');
 }
 
+const LIBRARY_BASE = LIBRARY_API_URL.replace(/\/+$/, '');
+
+/**
+ * Provider endpoint for a given OpenAI-style path ('chat/completions',
+ * 'audio/transcriptions', 'audio/speech'). Proxy mode routes through the
+ * local Library server (/api/ai/<action>) which injects the upstream key
+ * server-side; direct mode hits the configured gateway with the BYOK key.
+ */
+function providerUrl(config: AIConfig, path: string): string {
+  if (config.useServerProxy) return `${LIBRARY_BASE}/api/ai/${path}`;
+  return `${baseUrl(config)}/${path}`;
+}
+
 function buildHeaders(config: AIConfig, extra?: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json', ...extra };
-  if (config.apiKey) headers['Authorization'] = `Bearer ${config.apiKey}`;
+  // Proxy mode: the client never sends credentials — the server injects
+  // Authorization from its own env when forwarding upstream.
+  if (config.apiKey && !config.useServerProxy) headers['Authorization'] = `Bearer ${config.apiKey}`;
   return headers;
+}
+
+/** Readiness probe for the Settings UI: is the Library-server proxy reachable, does it have a key? */
+export async function proxyStatus(signal?: AbortSignal): Promise<{ ok: boolean; hasKey: boolean } | null> {
+  try {
+    const res = await fetch(`${LIBRARY_BASE}/api/ai/status`, { signal });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { hasKey?: boolean };
+    return { ok: true, hasKey: data.hasKey === true };
+  } catch {
+    return null;
+  }
 }
 
 async function assertOk(res: Response, label: string): Promise<void> {
@@ -105,7 +151,7 @@ export async function chatStream(
   onDelta: (text: string) => void,
   signal?: AbortSignal,
 ): Promise<string> {
-  const url = `${baseUrl(config)}/chat/completions`;
+  const url = providerUrl(config, 'chat/completions');
   const res = await fetch(url, {
     method: 'POST',
     headers: buildHeaders(config),
@@ -181,7 +227,7 @@ export async function chatStream(
 
 /** Non-streaming chat completion — returns just the assistant text. */
 export async function chatOnce(config: AIConfig, messages: ChatMessage[], signal?: AbortSignal): Promise<string> {
-  const url = `${baseUrl(config)}/chat/completions`;
+  const url = providerUrl(config, 'chat/completions');
   const res = await fetch(url, {
     method: 'POST',
     headers: buildHeaders(config),
@@ -193,14 +239,14 @@ export async function chatOnce(config: AIConfig, messages: ChatMessage[], signal
   return data.choices?.[0]?.message?.content ?? '';
 }
 
-/** STT through custom provider (/v1/audio/transcriptions, multipart). */
+/** STT through the provider (POST /v1/audio/transcriptions, multipart) — direct or via proxy. */
 export async function transcribe(config: AIConfig, blob: Blob): Promise<string> {
-  const url = `${baseUrl(config)}/audio/transcriptions`;
+  const url = providerUrl(config, 'audio/transcriptions');
   const form = new FormData();
   form.append('file', blob, 'recording.webm');
   form.append('model', config.sttModel);
   const headers: Record<string, string> = {};
-  if (config.apiKey) headers['Authorization'] = `Bearer ${config.apiKey}`;
+  if (config.apiKey && !config.useServerProxy) headers['Authorization'] = `Bearer ${config.apiKey}`;
 
   const res = await fetch(url, { method: 'POST', headers, body: form });
   await assertOk(res, 'STT');
@@ -208,9 +254,9 @@ export async function transcribe(config: AIConfig, blob: Blob): Promise<string> 
   return data.text || '';
 }
 
-/** TTS through custom provider (/v1/audio/speech) — returns the audio blob. */
+/** TTS through the provider (/v1/audio/speech) — returns the audio blob. */
 export async function speech(config: AIConfig, text: string, signal?: AbortSignal): Promise<Blob> {
-  const url = `${baseUrl(config)}/audio/speech`;
+  const url = providerUrl(config, 'audio/speech');
   const res = await fetch(url, {
     method: 'POST',
     headers: buildHeaders(config),

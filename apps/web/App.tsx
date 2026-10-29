@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, Suspense } from 'react';
 // layout-projection/drag của motion-dom → initial chunk nhỏ hơn đáng kể.
 // strict = nếu ai import `motion` (full) sẽ throw ngay ở dev.
 import { LazyMotion, AnimatePresence, m } from 'motion/react';
-import { TriangleAlert, ChevronsLeft, ChevronsRight, X, PanelLeft, PanelRight } from 'lucide-react';
+import { TriangleAlert, ChevronsLeft, ChevronsRight, X, PanelLeft, PanelRight, ShieldCheck } from 'lucide-react';
 import { AppMode, SessionState, TranscriptionEntry } from './types';
 import { SYSTEM_INSTRUCTION, DIFFICULTY_PROMPT, PERSONA_PROMPT } from './constants';
 import { MODE_CONFIGS, MODE_PROMPT_SNIPPET } from './modes';
@@ -11,6 +11,7 @@ import {
   AIConfig,
   ChatMessage,
   loadConfig,
+  saveConfig,
   translatePhrase,
   transcribe,
 } from './utils/api';
@@ -66,6 +67,36 @@ const App: React.FC = () => {
   const [config, setConfig] = useState<AIConfig>(() => loadConfig());
   const [showSettings, setShowSettings] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  // One-time notice for pre-proxy users: a plaintext API key was found in
+  // localStorage — offer the server-proxy switch (never switch silently).
+  // Lazy initializer (not an effect): avoids a sync setState in effect.
+  const [proxyNotice, setProxyNotice] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      if (localStorage.getItem('fluentdev-proxy-notice')) return false;
+      const raw = localStorage.getItem('fluentdev-ai-config');
+      const key = raw ? (JSON.parse(raw)?.apiKey ?? '') : '';
+      return typeof key === 'string' && key.length > 0;
+    } catch {
+      return false;
+    }
+  });
+
+  const resolveProxyNotice = (accept: boolean) => {
+    try {
+      localStorage.setItem('fluentdev-proxy-notice', 'done');
+    } catch {
+      /* ignore */
+    }
+    setProxyNotice(false);
+    if (accept) {
+      // Key stays in named profiles (so switching back doesn't lose it), but
+      // the active config stops sending/storing it in the browser.
+      const next = { ...config, useServerProxy: true };
+      setConfig(next);
+      saveConfig(next);
+    }
+  };
 
   // F4: persisted UI prefs (mode/scenario/topic/panels) — validated once at mount.
   const [initialPrefs] = useState(() => {
@@ -705,6 +736,26 @@ const App: React.FC = () => {
           <div className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 text-amber-700 dark:text-amber-300 rounded-2xl px-4 py-2.5" role="alert" lang="vi">
             <TriangleAlert size={14} className="mt-0.5 shrink-0" />
             <span>Trình duyệt này không hỗ trợ Web Speech (Safari/Firefox). Hãy chuyển STT → Custom Provider trong Settings để dùng nút Hold-to-Speak, hoặc gõ text phía dưới — app vẫn học bình thường.</span>
+          </div>
+        )}
+        {/* One-time proxy migration offer for legacy BYOK users. */}
+        {proxyNotice && (
+          <div className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 text-blue-700 dark:text-blue-300 rounded-2xl px-4 py-2.5" role="status" lang="vi">
+            <ShieldCheck size={14} className="mt-0.5 shrink-0" />
+            <span className="flex-1">API key của bạn đang lưu plaintext trong browser. Chuyển sang server proxy — key nằm ở server env, không còn trong localStorage? (Direct BYOK vẫn giữ nguyên nếu từ chối.)</span>
+            <button
+              onClick={() => resolveProxyNotice(true)}
+              className="shrink-0 px-2.5 py-1 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+            >
+              Chuyển
+            </button>
+            <button
+              onClick={() => resolveProxyNotice(false)}
+              className="shrink-0 p-0.5 -m-0.5 rounded text-blue-400 hover:text-blue-600 dark:hover:text-blue-200 transition-colors"
+              aria-label="Keep direct BYOK mode"
+            >
+              <X size={14} />
+            </button>
           </div>
         )}
         <div aria-live="polite" role="status" className="sr-only">{announce}</div>
