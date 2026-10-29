@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Trash2, Volume2, Download, Check, RotateCcw, GraduationCap, MessageCircle, Upload, FileJson, Clock, RefreshCw, Plus, Search } from 'lucide-react';
+import { X, Trash2, Volume2, Download, Check, RotateCcw, GraduationCap, MessageCircle, Upload, FileJson, Clock, RefreshCw, Plus, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import type { AIConfig } from '../utils/api';
 import type { AppMode } from '../types';
 import type { MistakeEntry, ProgressDay, SessionRecord, TaskEntry, VocabEntry } from '../types';
@@ -72,6 +72,8 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
   const [dueOnly, setDueOnly] = useState(false);
   // Two-step inline confirm for destructive clear (replaces window.confirm)
   const [confirmClear, setConfirmClear] = useState(false);
+  // F5: expanded session row — read the full transcript in-app (no download needed)
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const streak = getStreak();
@@ -279,17 +281,26 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                 />
               </div>
               {importError && <p className="text-[11px] text-red-500">{importError}</p>}
-              {fSessions.map((s) => (
+              {fSessions.map((s) => {
+                const expanded = expandedSessionId === s.id;
+                return (
                 <div key={s.id} className={`${cardCls} p-4`}>
                   <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-2 flex-wrap text-sm font-bold dark:text-white">
+                    <button
+                      onClick={() => setExpandedSessionId(expanded ? null : s.id)}
+                      className="flex items-center gap-2 flex-wrap text-sm font-bold dark:text-white text-left group"
+                      aria-expanded={expanded}
+                      aria-controls={`session-detail-${s.id}`}
+                      title={expanded ? 'Thu gọn transcript' : 'Xem transcript'}
+                    >
+                      {expanded ? <ChevronUp size={14} className="text-blue-500 shrink-0" aria-hidden /> : <ChevronDown size={14} className="text-slate-400 group-hover:text-blue-500 shrink-0 transition-colors" aria-hidden />}
                       <ModeChip mode={s.mode} />
                       <span>·</span>
                       <span>{new Date(s.startedAt).toLocaleString()}</span>
                       <span>· {Math.round(Number(s.durationSec) / 60)}m</span>
                       <span>· {s.turns} turns</span>
                       <span>· ⭐ {Number.isFinite(Number(s.avgScore)) ? Number(s.avgScore).toFixed(1) : '—'}</span>
-                    </div>
+                    </button>
                     <button
                       onClick={() => downloadText(`fluentdev-${s.mode}-${s.id.slice(-6)}.md`, transcriptToMarkdown(s.transcript, s.mode))}
                       className="flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-700"
@@ -298,8 +309,27 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                     </button>
                   </div>
                   <p className="text-[11px] text-slate-400 mt-1">Corrections: {s.corrections} · Vocab: {s.vocabPoints} · Confidence: {s.confidence}%</p>
+                  {expanded && (
+                    <div id={`session-detail-${s.id}`} className="mt-3 border-t border-slate-100 dark:border-slate-800 pt-3 space-y-2 max-h-72 overflow-y-auto">
+                      {s.transcript.length === 0 && (
+                        <p className="text-[11px] text-slate-400">Buổi này không có transcript.</p>
+                      )}
+                      {s.transcript.map((m, i) => (
+                        <div key={m.id ?? `${s.id}-${i}`} className={`rounded-xl px-3 py-2 text-xs leading-relaxed ${m.role === 'user' ? 'bg-blue-50 dark:bg-blue-900/20 text-slate-700 dark:text-slate-200' : 'bg-slate-50 dark:bg-slate-800/70 text-slate-700 dark:text-slate-300'}`}>
+                          <span className={`block text-[10px] font-bold uppercase tracking-wider mb-0.5 ${m.role === 'user' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
+                            {m.role === 'user' ? 'You' : 'Coach'}
+                          </span>
+                          <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                          {m.suggestion && (
+                            <p className="mt-1 text-[11px] italic text-emerald-700 dark:text-emerald-400">💡 {m.suggestion}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </>
           )}
 
