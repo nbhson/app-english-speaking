@@ -214,6 +214,88 @@ export function totalXP(): number {
   return getProgress().reduce((s, d) => s + d.xp, 0);
 }
 
+// --- Weekly goal (F1) + practice stats (F3) ---
+
+const GOAL_KEY = 'fluentdev-weekly-goal-v1';
+export const DEFAULT_WEEKLY_GOAL_MIN = 150;
+
+export function getWeeklyGoalMinutes(): number {
+  const n = Number(read<number>(GOAL_KEY, DEFAULT_WEEKLY_GOAL_MIN));
+  return Number.isFinite(n) ? Math.min(3000, Math.max(30, Math.round(n))) : DEFAULT_WEEKLY_GOAL_MIN;
+}
+
+export function setWeeklyGoalMinutes(minutes: number): void {
+  write(GOAL_KEY, Math.min(3000, Math.max(30, Math.round(Number(minutes) || DEFAULT_WEEKLY_GOAL_MIN))));
+}
+
+/** Local midnight of the Monday starting the current week (DST-safe via Date.UTC). */
+export function startOfWeek(d = new Date()): Date {
+  const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dow = (dt.getDay() + 6) % 7; // Monday = 0
+  dt.setDate(dt.getDate() - dow);
+  return dt;
+}
+
+const utcDayMs = (dateKey: string): number => {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return Date.UTC(y, (m || 1) - 1, d || 1);
+};
+
+/** Practice minutes accumulated since Monday 00:00 local (current week). */
+export function minutesThisWeek(days: ProgressDay[], ref = new Date()): number {
+  const start = startOfWeek(ref);
+  const keys = new Set<string>();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    keys.add(todayKey(d));
+  }
+  return days.filter((d) => keys.has(d.date)).reduce((s, d) => s + d.minutes, 0);
+}
+
+/** Totals over the last 7 local days (today inclusive). */
+export function last7DaysStats(days: ProgressDay[], ref = new Date()): { minutes: number; sessions: number; xp: number } {
+  const keys = new Set<string>();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(ref);
+    d.setDate(ref.getDate() - i);
+    keys.add(todayKey(d));
+  }
+  return days
+    .filter((d) => keys.has(d.date))
+    .reduce(
+      (acc, d) => ({ minutes: acc.minutes + d.minutes, sessions: acc.sessions + d.sessions, xp: acc.xp + d.xp }),
+      { minutes: 0, sessions: 0, xp: 0 },
+    );
+}
+
+/** Longest run of consecutive practice days (UTC-normalized compare — DST-safe). */
+export function bestStreak(days: ProgressDay[]): number {
+  const sorted = days.map((d) => d.date).sort();
+  let best = 0;
+  let run = 0;
+  let prevMs = Number.NaN;
+  for (const date of sorted) {
+    const ms = utcDayMs(date);
+    run = ms === prevMs + 86_400_000 ? run + 1 : 1;
+    best = Math.max(best, run);
+    prevMs = ms;
+  }
+  return best;
+}
+
+/** Session count per mode, most-practiced first. Unknown modes kept as-is. */
+export function modeDistribution(sessions: SessionRecord[]): Array<{ mode: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const s of sessions) {
+    const key = String(s.mode);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([mode, count]) => ({ mode, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
 // --- Multi-profile configs ---
 export interface NamedProfile {
   id: string;

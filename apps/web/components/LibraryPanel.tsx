@@ -21,6 +21,7 @@ import { isDue, dueInLabel } from '../utils/srs';
 import { speakAmbient } from '../utils/tts';
 import { useModalFocus } from '../hooks/useModalFocus';
 import { useToast } from './Toast';
+import { ProgressTab } from './ProgressTab';
 import { MODE_CONFIGS } from '../modes';
 import { inputCls, toggleCls, btnGhost, cardCls } from '../utils/ui';
 
@@ -497,34 +498,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
             </>
           )}
 
-          {tab === 'progress' && (
-            <>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-4 text-center">
-                  <div className="text-2xl font-bold dark:text-white">🔥 {streak}</div>
-                  <div className="text-[11px] font-bold text-slate-400 uppercase">day streak</div>
-                </div>
-                <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-4 text-center">
-                  <div className="text-2xl font-bold dark:text-white">⚡ {xp}</div>
-                  <div className="text-[11px] font-bold text-slate-400 uppercase">total XP</div>
-                </div>
-                <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-4 text-center">
-                  <div className="text-2xl font-bold dark:text-white">{sessions.length}</div>
-                  <div className="text-[11px] font-bold text-slate-400 uppercase">sessions</div>
-                </div>
-              </div>
-              <h4 className="text-xs font-bold text-slate-400 uppercase mt-2">Last 14 days</h4>
-              <div className="flex items-end gap-1.5 h-24">
-                {progress.slice(0, 14).reverse().map((d) => (
-                  <div key={d.date} title={`${d.date}: ${d.sessions} sessions, ${d.minutes}m, ${d.xp}XP`} className="flex-1 flex flex-col items-center gap-1">
-                    <div className="w-full bg-blue-600/80 rounded-t-md" style={{ height: `${Math.min(80, 6 + d.minutes * 3 + d.sessions * 6)}px` }} />
-                    <span className="text-[9px] text-slate-400">{d.date.slice(5)}</span>
-                  </div>
-                ))}
-                {progress.length === 0 && <p className="text-xs text-slate-400">Học 1 buổi để bắt đầu streak.</p>}
-              </div>
-            </>
-          )}
+          {tab === 'progress' && <ProgressTab progress={progress} sessions={sessions} streak={streak} xp={xp} />}
         </div>
       </div>
     </div>
