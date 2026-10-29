@@ -37,7 +37,10 @@ export const ProgressTab: React.FC<{
 
   const R = 30;
   const ring = `hsl(217 91% 60%)`;
-  const commitGoal = (m: number) => {
+  const commitGoal = (raw: string | number) => {
+    // Input có thể rỗng/rác (clear rồi Enter) → NaN làm ring render % NaN.
+    const n = Math.round(Number(raw));
+    const m = Number.isFinite(n) ? Math.min(3000, Math.max(30, n)) : getWeeklyGoalMinutes();
     setWeeklyGoalMinutes(m);
     setGoal(m);
     setGoalDraft(null);
@@ -91,13 +94,14 @@ export const ProgressTab: React.FC<{
                   autoFocus
                   onChange={(e) => setGoalDraft(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitGoal(Number(goalDraft));
+                    if (e.key === 'Enter') commitGoal(goalDraft);
                     if (e.key === 'Escape') setGoalDraft(null);
                   }}
+                  onBlur={() => commitGoal(goalDraft)}
                   className="w-16 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 py-0.5 text-xs dark:text-white"
                   aria-label="Weekly goal minutes"
                 />
-                <button className={btnGhost} onClick={() => commitGoal(Number(goalDraft))}>Set</button>
+                <button className={btnGhost} onClick={() => commitGoal(goalDraft)}>Set</button>
               </span>
             )}
           </p>
