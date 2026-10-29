@@ -74,3 +74,46 @@ luyện nói (goal hàng tuần, onboarding, stats dashboard, persistence).
 - [x] F1 Weekly goal · F2 Onboarding · F3 Stats · F4 UI prefs
 - [x] `npm test` 44/44 pass · `npm run build` OK · `node --check` server OK
 - [x] Commit + self-review
+
+# Round 2 (tiếp) — Rescue WIP + review bổ sung (2026-10-29)
+
+## Bối cảnh
+
+Session trước bị ngắt giữa chừng khi làm F2: `Onboarding.tsx` đã tạo nhưng chưa được
+render, App.tsx import dở (WIP uncommitted). Đợt này review lại toàn bộ, hoàn tất
+F2 và nâng thêm một tầng nữa.
+
+## Objective
+
+Hoàn tất F2 (onboarding), vá bug + hardening phát hiện thêm trong review đợt 2b,
+thêm 2 feature (F5 session transcript viewer, F6 SRS due badge), verify đầy đủ.
+
+## Findings (đợt 2b)
+
+| # | Severity | Vị trí | Vấn đề | Fix |
+|---|----------|--------|--------|-----|
+| R2b-1 | MAJOR | web/App.tsx + Onboarding.tsx (WIP) | Tour onboarding import + state nhưng KHÔNG render; không có replay từ Settings | Render `<Onboarding>`, prop `onReplayTour` vào SettingsModal → Advanced |
+| R2b-2 | MINOR | server PATCH /api/mistakes/:id | `reviewCount` nhận số bất kỳ (âm/huge) → poison lịch SRS | Clamp 0..10000, chỉ cộng khi `reviewed === true` |
+| R2b-3 | MINOR | web/ProgressTab.tsx | `commitGoal(Number(goalDraft))` → NaN khi input rỗng → ring render "NaN%" | Parse + clamp 30..3000, fallback goal hiện tại; commit cả khi blur |
+| R2b-4 | MINOR | web/App.tsx `handleToggleTranslation` | Dịch thất bại trả `null` → UI im lặng, user tưởng bấm hỏng | Announce (aria-live) thông báo lỗi dịch |
+
+## Features mới (đợt 2b)
+
+- **F5 — Session transcript viewer**: row History trong Library bấm để bung transcript
+  đầy đủ (bubble You/Coach, 💡 suggestion, scroll trong), không cần download .md.
+- **F6 — SRS due badge**: icon 📚 trên Header hiện badge số thẻ mistakes/vocab đến hạn
+  ôn (`countDueReviews()`); refresh khi Library đóng (prop `refreshSignal`) và khi mở app.
+
+## Trạng thái Round 2 (tiếp)
+
+- [x] Rescue + commit WIP F2 (`6f12654`)
+- [x] Fix R2b-2..R2b-4
+- [x] F5 transcript viewer (`f175323`) · F6 due badge (`4a8c6c7`)
+- [x] `tsc --noEmit` pass · vitest 41/41 pass (thêm test weekly-goal clamp + countDueReviews) · `vite build` OK · `node --check` server OK
+- [x] Commit + self-review diff cuối
+
+## Remaining risks (đọc tiếp ở đợt sau)
+
+- Bundle > 500 kB (vite warning) — cân nhắc code-split `motion`/`react-markdown` nếu cần.
+- API key vẫn plaintext trong localStorage (đã cảnh báo trong Settings); giải pháp triệt để là proxy server-side.
+- Server không có rate-limit — chấp nhận được vì local-first + CORS allowlist.
