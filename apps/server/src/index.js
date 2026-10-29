@@ -224,8 +224,13 @@ app.patch('/api/mistakes/:id', (req, res) => {
   const b = req.body || {};
   const cur = db.prepare('SELECT * FROM mistakes WHERE id = ?').get(req.params.id);
   if (!cur) return res.status(404).json({ error: 'not found' });
-  const reviewCount =
-    typeof b.reviewCount === 'number' ? b.reviewCount : cur.review_count + (b.reviewed ? 1 : 0);
+  // Clamp reviewCount (0..10000): giá trị âm/huge từ client làm hỏng lịch SRS.
+  let reviewCount = cur.review_count;
+  if (typeof b.reviewCount === 'number') {
+    reviewCount = Math.max(0, Math.min(10_000, Math.trunc(b.reviewCount)));
+  } else if (b.reviewed === true) {
+    reviewCount = Math.min(cur.review_count + 1, 10_000);
+  }
   const mastered = typeof b.mastered === 'boolean' ? bool(b.mastered) : cur.mastered;
   db.prepare('UPDATE mistakes SET review_count = ?, mastered = ? WHERE id = ?').run(
     reviewCount,
