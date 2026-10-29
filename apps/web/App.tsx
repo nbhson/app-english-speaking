@@ -30,6 +30,7 @@ import {
 } from './utils/storage';
 import { mirrorSession, mirrorMistake, mirrorProgress } from './utils/serverStore';
 import { uid } from './utils/uid';
+import { loadUiPrefs, saveUiPrefs } from './utils/uiPrefs';
 import {
   extractBlock, extractBlocks, parseCorrectionBlock, extractCorrectionSuggestion,
 } from './utils/aiBlocks';
@@ -52,6 +53,23 @@ const App: React.FC = () => {
   const [config, setConfig] = useState<AIConfig>(() => loadConfig());
   const [showSettings, setShowSettings] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+
+  // F4: persisted UI prefs (mode/scenario/topic/panels) — validated once at mount.
+  const [initialPrefs] = useState(() => {
+    const p = loadUiPrefs();
+    const mode = p.mode ?? AppMode.DAILY;
+    const scenarios = MODE_CONFIGS[mode]?.scenarios;
+    const scenarioId = scenarios?.some((s) => s.id === p.scenarioId)
+      ? p.scenarioId
+      : scenarios?.[0]?.id ?? FIRST_SCENARIO[mode];
+    return {
+      mode,
+      scenarioId: scenarioId as string,
+      customTopic: p.customTopic ?? '',
+      showSidebar: p.showSidebar ?? false,
+      showAssessment: p.showAssessment,
+    };
+  });
 
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -76,7 +94,7 @@ const App: React.FC = () => {
 
   const [session, setSession] = useState<SessionState>({
     isActive: false,
-    mode: AppMode.DAILY,
+    mode: initialPrefs.mode,
     startTime: null,
   });
   const [transcriptions, setTranscriptions] = useState<TranscriptionEntry[]>([]);
@@ -86,13 +104,13 @@ const App: React.FC = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [showSidebar, setShowSidebar] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(initialPrefs.showSidebar);
   const [showAssessment, setShowAssessment] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true,
+    initialPrefs.showAssessment ?? (typeof window !== 'undefined' ? window.innerWidth >= 1024 : true),
   );
   const [inputText, setInputText] = useState('');
-  const [customTopic, setCustomTopic] = useState('');
-  const [scenarioId, setScenarioId] = useState<string>(FIRST_SCENARIO[AppMode.DAILY]);
+  const [customTopic, setCustomTopic] = useState(initialPrefs.customTopic);
+  const [scenarioId, setScenarioId] = useState<string>(initialPrefs.scenarioId);
   const [showPhrases, setShowPhrases] = useState(false);
   const [autoListen, setAutoListen] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -118,7 +136,7 @@ const App: React.FC = () => {
   const configRef = useRef(config);
   const transcriptionsRef = useRef<TranscriptionEntry[]>([]);
   const activeRef = useRef(false);
-  const modeRef = useRef<AppMode>(AppMode.DAILY);
+  const modeRef = useRef<AppMode>(initialPrefs.mode);
   const processingRef = useRef(false);
   const speakingRef = useRef(false);
   const customTopicRef = useRef('');
@@ -153,6 +171,11 @@ const App: React.FC = () => {
       /* ignore */
     }
   }, [autoListen]);
+
+  // F4: persist UI prefs — layout + practice context survive a reload.
+  useEffect(() => {
+    saveUiPrefs({ mode: session.mode, scenarioId, customTopic, showSidebar, showAssessment });
+  }, [session.mode, scenarioId, customTopic, showSidebar, showAssessment]);
 
   useEffect(() => {
     if (!session.isActive || !session.startTime) {
