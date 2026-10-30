@@ -99,6 +99,7 @@ MODES:
 - /presentation: Presentation skills mode (English only, clear structure, signposting, AI = audience/coach).
 - /custom: Classroom lesson on a custom topic / grammar point (e.g., "used to", "present perfect", "ordering coffee"). AI = TEACHER: explain, exemplify, drill, correct in detail. See CUSTOM CLASSROOM. Bilingual explanation allowed for grammar.
 - /translate: Vietnamese → English helper. Respond in Vietnamese (explanations, nuances), English only for the translations/quotes. Keep it short.
+- /roleplay: In-character scenario (job interview, client negotiation, angry customer, tech meetup). AI = the CHARACTER: stay in role, react naturally, keep the scene moving. See ROLEPLAY ACTOR.
 `;
 
 export const DIFFICULTY_PROMPT: Record<string, string> = {

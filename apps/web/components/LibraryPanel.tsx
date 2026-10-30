@@ -1,27 +1,73 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { X, Trash2, Volume2, Download, Check, RotateCcw, GraduationCap, MessageCircle, Upload, FileJson, Clock, RefreshCw, Plus, Search, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  X,
+  Trash2,
+  Volume2,
+  Download,
+  Check,
+  RotateCcw,
+  GraduationCap,
+  MessageCircle,
+  Upload,
+  FileJson,
+  Clock,
+  RefreshCw,
+  Plus,
+  Search,
+  ChevronDown,
+  ChevronUp,
+  Layers,
+  Mic,
+} from 'lucide-react';
 import type { AIConfig } from '../utils/api';
 import type { AppMode } from '../types';
 import type { MistakeEntry, ProgressDay, SessionRecord, TaskEntry, VocabEntry } from '../types';
 import {
-  getSessions, clearSessions, transcriptToMarkdown, downloadText,
-  getMistakes, markMistakeReviewed, deleteMistake,
-  getVocab, deleteVocab, markVocabReviewed,
-  getTasks, addTask, setTaskCompleted, deleteTask,
-  getProgress, getStreak, totalXP,
-  exportLibrary, importLibrary, exportAnkiTSV,
+  getSessions,
+  clearSessions,
+  transcriptToMarkdown,
+  downloadText,
+  getMistakes,
+  markMistakeReviewed,
+  deleteMistake,
+  getVocab,
+  deleteVocab,
+  markVocabReviewed,
+  getTasks,
+  addTask,
+  setTaskCompleted,
+  deleteTask,
+  getProgress,
+  getStreak,
+  totalXP,
+  exportLibrary,
+  importLibrary,
+  exportAnkiTSV,
 } from '../utils/storage';
 import {
-  fetchSessions, fetchMistakes, fetchVocab, fetchProgress, fetchTasks,
-  mirrorClearSessions, mirrorMistakeReviewed, mirrorDeleteMistake, mirrorDeleteVocab,
-  mirrorTask, mirrorTaskCompleted, mirrorDeleteTask,
-  migrateLocalToServer, pendingCount, flushPendingQueue,
+  fetchSessions,
+  fetchMistakes,
+  fetchVocab,
+  fetchProgress,
+  fetchTasks,
+  mirrorClearSessions,
+  mirrorMistakeReviewed,
+  mirrorDeleteMistake,
+  mirrorDeleteVocab,
+  mirrorTask,
+  mirrorTaskCompleted,
+  mirrorDeleteTask,
+  migrateLocalToServer,
+  pendingCount,
+  flushPendingQueue,
 } from '../utils/serverStore';
 import { isDue, dueInLabel } from '../utils/srs';
 import { speakAmbient } from '../utils/tts';
 import { useModalFocus } from '../hooks/useModalFocus';
 import { useToast } from './Toast';
 import { ProgressTab } from './ProgressTab';
+import { ReviewSession } from './ReviewSession';
+import { PronunciationDrill } from './PronunciationDrill';
 import { MODE_CONFIGS } from '../modes';
 import { inputCls, toggleCls, btnGhost, cardCls } from '../utils/ui';
 
@@ -70,6 +116,10 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
   });
   const [importError, setImportError] = useState<string | null>(null);
   const [dueOnly, setDueOnly] = useState(false);
+  // F7 — SRS review session: flashcard drill for due mistakes + vocab.
+  const [showReview, setShowReview] = useState(false);
+  // F10 — pronunciation drill sentences (null = drill đóng).
+  const [drillSentences, setDrillSentences] = useState<string[] | null>(null);
   // Two-step inline confirm for destructive clear (replaces window.confirm)
   const [confirmClear, setConfirmClear] = useState(false);
   // F5: expanded session row — read the full transcript in-app (no download needed)
@@ -78,15 +128,42 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const streak = getStreak();
   const xp = totalXP();
+  // F7 — due counts drive the "Ôn ngay" banner (recomputed when lists refresh).
+  const dueCount = useMemo(() => {
+    try {
+      const m = mistakes.filter((x) => !x.mastered && isDue(x.nextReview)).length;
+      const v = vocab.filter((x) => isDue(x.nextReview)).length;
+      return m + v;
+    } catch {
+      return 0;
+    }
+  }, [mistakes, vocab]);
 
   // Active-tab search filter — case-insensitive across the tab's text fields.
   const q = query.trim().toLowerCase();
   const matchQ = (s: string | undefined) => (s ?? '').toLowerCase().includes(q);
-  const fSessions = q === '' ? sessions : sessions.filter((s) => s.mode.toLowerCase().includes(q) || s.transcript.some((m) => m.text.toLowerCase().includes(q)));
-  const fMistakes = q === '' ? mistakes : mistakes.filter((m) => matchQ(m.original) || matchQ(m.corrected) || matchQ(m.explanation) || matchQ(m.alternative));
-  const fVocab = q === '' ? vocab : vocab.filter((v) => matchQ(v.word) || matchQ(v.translation) || matchQ(v.example));
+  const fSessions =
+    q === ''
+      ? sessions
+      : sessions.filter(
+          (s) =>
+            s.mode.toLowerCase().includes(q) || s.transcript.some((m) => m.text.toLowerCase().includes(q))
+        );
+  const fMistakes =
+    q === ''
+      ? mistakes
+      : mistakes.filter(
+          (m) => matchQ(m.original) || matchQ(m.corrected) || matchQ(m.explanation) || matchQ(m.alternative)
+        );
+  const fVocab =
+    q === '' ? vocab : vocab.filter((v) => matchQ(v.word) || matchQ(v.translation) || matchQ(v.example));
   const fTasks = q === '' ? tasks : tasks.filter((t) => matchQ(t.title) || matchQ(t.description));
-  const noResults = q !== '' && fSessions.length === 0 && fMistakes.length === 0 && fVocab.length === 0 && fTasks.length === 0;
+  const noResults =
+    q !== '' &&
+    fSessions.length === 0 &&
+    fMistakes.length === 0 &&
+    fVocab.length === 0 &&
+    fTasks.length === 0;
 
   const bump = () => {
     setRefresh((v) => v + 1);
@@ -122,14 +199,20 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
     void migrateLocalToServer().then((migrated) => {
       if (migrated && !cancelled) setRefresh((v) => v + 1);
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const [s, m, v, t, p] = await Promise.all([
-        fetchSessions(), fetchMistakes(), fetchVocab(), fetchTasks(), fetchProgress(),
+        fetchSessions(),
+        fetchMistakes(),
+        fetchVocab(),
+        fetchTasks(),
+        fetchProgress(),
       ]);
       if (cancelled) return;
       setSessions(s.list);
@@ -139,18 +222,33 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
       setProgress(p.list);
       setRemote(s.remote || m.remote || v.remote || t.remote || p.remote);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [tab, refresh]);
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="My Learning Library">
-      <div ref={dialogRef} tabIndex={-1} className="w-full sm:max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-xl sm:rounded-xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[88vh] flex flex-col overflow-hidden focus:outline-none">
+    <div
+      className="fixed inset-0 z-[150] flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="My Learning Library"
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="w-full sm:max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-xl sm:rounded-xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[88vh] flex flex-col overflow-hidden focus:outline-none"
+      >
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-bold dark:text-white">📚 My Learning Library</h2>
             {remote !== null && (
               <span
-                title={remote ? 'Đang lưu vào SQLite (data/fluentdev.db)' : 'Server chưa chạy — đang lưu local (trình duyệt)'}
+                title={
+                  remote
+                    ? 'Đang lưu vào SQLite (data/fluentdev.db)'
+                    : 'Server chưa chạy — đang lưu local (trình duyệt)'
+                }
                 className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${remote ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}
               >
                 {remote ? '● SQLite' : '● Local'}
@@ -158,7 +256,12 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
             )}
             {pending > 0 && (
               <button
-                onClick={() => { void flushPendingQueue().then(() => { bump(); toast?.show('Đã đồng bộ thay đổi lên server', 'success'); }); }}
+                onClick={() => {
+                  void flushPendingQueue().then(() => {
+                    bump();
+                    toast?.show('Đã đồng bộ thay đổi lên server', 'success');
+                  });
+                }}
                 title={`${pending} thay đổi chưa sync lên server — bấm để retry`}
                 className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 flex items-center gap-1"
               >
@@ -166,17 +269,25 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
               </button>
             )}
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400" aria-label="Close library">
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400"
+            aria-label="Close library"
+          >
             <X size={18} />
           </button>
         </div>
         <div className="flex gap-2 px-4 sm:px-6 pt-3 sm:pt-4 pb-1 flex-wrap shrink-0">
-          {([['history', '🕘 History'], ['mistakes', `🐞 Mistakes (${mistakes.length})`], ['vocab', `🔖 Vocab (${vocab.length})`], ['tasks', `✅ Tasks (${tasks.filter((t) => !t.completed).length})`], ['progress', `🔥 Progress · ${streak}d · ${xp}XP`]] as [Tab, string][]).map(([t, label]) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={toggleCls(tab === t)}
-            >
+          {(
+            [
+              ['history', '🕘 History'],
+              ['mistakes', `🐞 Mistakes (${mistakes.length})`],
+              ['vocab', `🔖 Vocab (${vocab.length})`],
+              ['tasks', `✅ Tasks (${tasks.filter((t) => !t.completed).length})`],
+              ['progress', `🔥 Progress · ${streak}d · ${xp}XP`],
+            ] as [Tab, string][]
+          ).map(([t, label]) => (
+            <button key={t} onClick={() => setTab(t)} className={toggleCls(tab === t)}>
               {label}
             </button>
           ))}
@@ -185,7 +296,11 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
         {/* Global search — filters the active tab's items (case-insensitive) */}
         <div className="px-4 sm:px-6 pb-1 shrink-0">
           <div className="relative">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden />
+            <Search
+              size={13}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              aria-hidden
+            />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -205,6 +320,26 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
           </div>
         </div>
 
+        {/* F7 — SRS review banner: active-recall drill for due cards */}
+        {dueCount > 0 && !showReview && (
+          <div className="px-4 sm:px-6 pb-1 shrink-0">
+            <button
+              onClick={() => setShowReview(true)}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.99] transition-all text-left"
+              title="Ôn các thẻ đến hạn bằng flashcard"
+            >
+              <Layers size={18} className="shrink-0" aria-hidden />
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm font-bold">{dueCount} thẻ đến hạn ôn</span>
+                <span className="block text-[11px] opacity-80">
+                  Ôn nhanh bằng flashcard — nhớ rồi / chưa nhớ
+                </span>
+              </span>
+              <span className="text-xs font-bold px-3 py-1.5 rounded-lg bg-white/20 shrink-0">Ôn ngay →</span>
+            </button>
+          </div>
+        )}
+
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 py-3 sm:py-4 pb-[env(safe-area-inset-bottom)] space-y-3">
           {noResults && (
             <p className="text-sm text-slate-400 text-center py-6" role="status">
@@ -213,7 +348,11 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
           )}
           {tab === 'history' && (
             <>
-              {fSessions.length === 0 && q === '' && <p className="text-sm text-slate-400">Chưa có session nào. Học xong 1 buổi sẽ tự lưu ở đây.</p>}
+              {fSessions.length === 0 && q === '' && (
+                <p className="text-sm text-slate-400">
+                  Chưa có session nào. Học xong 1 buổi sẽ tự lưu ở đây.
+                </p>
+              )}
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={() => {
@@ -235,14 +374,24 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                 </button>
                 <span className="flex-1" />
                 <button
-                  onClick={() => downloadText(`fluentdev-backup-${new Date().toISOString().slice(0, 10)}.json`, exportLibrary())}
+                  onClick={() =>
+                    downloadText(
+                      `fluentdev-backup-${new Date().toISOString().slice(0, 10)}.json`,
+                      exportLibrary()
+                    )
+                  }
                   className={btnGhost}
                   title="Backup toàn bộ Library ra file JSON"
                 >
                   <FileJson size={11} /> Export JSON
                 </button>
                 <button
-                  onClick={() => downloadText(`fluentdev-anki-${new Date().toISOString().slice(0, 10)}.tsv`, exportAnkiTSV())}
+                  onClick={() =>
+                    downloadText(
+                      `fluentdev-anki-${new Date().toISOString().slice(0, 10)}.tsv`,
+                      exportAnkiTSV()
+                    )
+                  }
                   className={btnGhost}
                   title="Xuất mistakes + vocab ra TSV để import vào Anki"
                 >
@@ -269,10 +418,16 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                       try {
                         const stats = importLibrary(String(reader.result || ''));
                         bump();
-                        toast?.show(`Import thành công: ${stats.sessions} sessions · ${stats.mistakes} mistakes · ${stats.vocab} từ · ${stats.tasks} tasks`, 'success');
+                        toast?.show(
+                          `Import thành công: ${stats.sessions} sessions · ${stats.mistakes} mistakes · ${stats.vocab} từ · ${stats.tasks} tasks`,
+                          'success'
+                        );
                       } catch (err) {
                         setImportError(err instanceof Error ? err.message : 'Import failed');
-                        toast?.show(`Import thất bại: ${err instanceof Error ? err.message : 'file không hợp lệ'}`, 'error');
+                        toast?.show(
+                          `Import thất bại: ${err instanceof Error ? err.message : 'file không hợp lệ'}`,
+                          'error'
+                        );
                       }
                     };
                     reader.readAsText(f);
@@ -284,50 +439,77 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
               {fSessions.map((s) => {
                 const expanded = expandedSessionId === s.id;
                 return (
-                <div key={s.id} className={`${cardCls} p-4`}>
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <button
-                      onClick={() => setExpandedSessionId(expanded ? null : s.id)}
-                      className="flex items-center gap-2 flex-wrap text-sm font-bold dark:text-white text-left group"
-                      aria-expanded={expanded}
-                      aria-controls={`session-detail-${s.id}`}
-                      title={expanded ? 'Thu gọn transcript' : 'Xem transcript'}
-                    >
-                      {expanded ? <ChevronUp size={14} className="text-blue-500 shrink-0" aria-hidden /> : <ChevronDown size={14} className="text-slate-400 group-hover:text-blue-500 shrink-0 transition-colors" aria-hidden />}
-                      <ModeChip mode={s.mode} />
-                      <span>·</span>
-                      <span>{new Date(s.startedAt).toLocaleString()}</span>
-                      <span>· {Math.round(Number(s.durationSec) / 60)}m</span>
-                      <span>· {s.turns} turns</span>
-                      <span>· ⭐ {Number.isFinite(Number(s.avgScore)) ? Number(s.avgScore).toFixed(1) : '—'}</span>
-                    </button>
-                    <button
-                      onClick={() => downloadText(`fluentdev-${s.mode}-${s.id.slice(-6)}.md`, transcriptToMarkdown(s.transcript, s.mode))}
-                      className="flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-700"
-                    >
-                      <Download size={12} /> .md
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-1">Corrections: {s.corrections} · Vocab: {s.vocabPoints} · Confidence: {s.confidence}%</p>
-                  {expanded && (
-                    <div id={`session-detail-${s.id}`} className="mt-3 border-t border-slate-100 dark:border-slate-800 pt-3 space-y-2 max-h-72 overflow-y-auto">
-                      {s.transcript.length === 0 && (
-                        <p className="text-[11px] text-slate-400">Buổi này không có transcript.</p>
-                      )}
-                      {s.transcript.map((m, i) => (
-                        <div key={m.id ?? `${s.id}-${i}`} className={`rounded-xl px-3 py-2 text-xs leading-relaxed ${m.role === 'user' ? 'bg-blue-50 dark:bg-blue-900/20 text-slate-700 dark:text-slate-200' : 'bg-slate-50 dark:bg-slate-800/70 text-slate-700 dark:text-slate-300'}`}>
-                          <span className={`block text-[10px] font-bold uppercase tracking-wider mb-0.5 ${m.role === 'user' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
-                            {m.role === 'user' ? 'You' : 'Coach'}
-                          </span>
-                          <p className="whitespace-pre-wrap break-words">{m.text}</p>
-                          {m.suggestion && (
-                            <p className="mt-1 text-[11px] italic text-emerald-700 dark:text-emerald-400">💡 {m.suggestion}</p>
-                          )}
-                        </div>
-                      ))}
+                  <div key={s.id} className={`${cardCls} p-4`}>
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <button
+                        onClick={() => setExpandedSessionId(expanded ? null : s.id)}
+                        className="flex items-center gap-2 flex-wrap text-sm font-bold dark:text-white text-left group"
+                        aria-expanded={expanded}
+                        aria-controls={`session-detail-${s.id}`}
+                        title={expanded ? 'Thu gọn transcript' : 'Xem transcript'}
+                      >
+                        {expanded ? (
+                          <ChevronUp size={14} className="text-blue-500 shrink-0" aria-hidden />
+                        ) : (
+                          <ChevronDown
+                            size={14}
+                            className="text-slate-400 group-hover:text-blue-500 shrink-0 transition-colors"
+                            aria-hidden
+                          />
+                        )}
+                        <ModeChip mode={s.mode} />
+                        <span>·</span>
+                        <span>{new Date(s.startedAt).toLocaleString()}</span>
+                        <span>· {Math.round(Number(s.durationSec) / 60)}m</span>
+                        <span>· {s.turns} turns</span>
+                        <span>
+                          · ⭐ {Number.isFinite(Number(s.avgScore)) ? Number(s.avgScore).toFixed(1) : '—'}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() =>
+                          downloadText(
+                            `fluentdev-${s.mode}-${s.id.slice(-6)}.md`,
+                            transcriptToMarkdown(s.transcript, s.mode)
+                          )
+                        }
+                        className="flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-700"
+                      >
+                        <Download size={12} /> .md
+                      </button>
                     </div>
-                  )}
-                </div>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Corrections: {s.corrections} · Vocab: {s.vocabPoints} · Confidence: {s.confidence}%
+                    </p>
+                    {expanded && (
+                      <div
+                        id={`session-detail-${s.id}`}
+                        className="mt-3 border-t border-slate-100 dark:border-slate-800 pt-3 space-y-2 max-h-72 overflow-y-auto"
+                      >
+                        {s.transcript.length === 0 && (
+                          <p className="text-[11px] text-slate-400">Buổi này không có transcript.</p>
+                        )}
+                        {s.transcript.map((m, i) => (
+                          <div
+                            key={m.id ?? `${s.id}-${i}`}
+                            className={`rounded-xl px-3 py-2 text-xs leading-relaxed ${m.role === 'user' ? 'bg-blue-50 dark:bg-blue-900/20 text-slate-700 dark:text-slate-200' : 'bg-slate-50 dark:bg-slate-800/70 text-slate-700 dark:text-slate-300'}`}
+                          >
+                            <span
+                              className={`block text-[10px] font-bold uppercase tracking-wider mb-0.5 ${m.role === 'user' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}
+                            >
+                              {m.role === 'user' ? 'You' : 'Coach'}
+                            </span>
+                            <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                            {m.suggestion && (
+                              <p className="mt-1 text-[11px] italic text-emerald-700 dark:text-emerald-400">
+                                💡 {m.suggestion}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </>
@@ -335,11 +517,16 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
 
           {tab === 'mistakes' && (
             <>
-              {fMistakes.length === 0 && q === '' && <p className="text-sm text-slate-400">Chưa có lỗi nào. Mỗi [Correction] của Coach sẽ tự lưu vào đây để ôn.</p>}
+              {fMistakes.length === 0 && q === '' && (
+                <p className="text-sm text-slate-400">
+                  Chưa có lỗi nào. Mỗi [Correction] của Coach sẽ tự lưu vào đây để ôn.
+                </p>
+              )}
               {fMistakes.length > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                    <Clock size={11} /> {fMistakes.filter((m) => !m.mastered && isDue(m.nextReview)).length} due
+                    <Clock size={11} /> {fMistakes.filter((m) => !m.mastered && isDue(m.nextReview)).length}{' '}
+                    due
                   </span>
                   <button
                     onClick={() => setDueOnly((v) => !v)}
@@ -349,36 +536,93 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                   </button>
                 </div>
               )}
-              {(dueOnly ? fMistakes.filter((m) => !m.mastered && isDue(m.nextReview)) : [...fMistakes].sort((a, b) => Number(isDue(a.nextReview)) - Number(isDue(b.nextReview)) || (a.nextReview ?? 0) - (b.nextReview ?? 0)))
-                .map((m) => (
-                <div key={m.id} className={`border rounded-lg p-4 ${m.mastered ? 'border-green-200 bg-green-50/50 dark:bg-green-900/10' : 'border-slate-200 dark:border-slate-700'}`}>
+              {(dueOnly
+                ? fMistakes.filter((m) => !m.mastered && isDue(m.nextReview))
+                : [...fMistakes].sort(
+                    (a, b) =>
+                      Number(isDue(a.nextReview)) - Number(isDue(b.nextReview)) ||
+                      (a.nextReview ?? 0) - (b.nextReview ?? 0)
+                  )
+              ).map((m) => (
+                <div
+                  key={m.id}
+                  className={`border rounded-lg p-4 ${m.mastered ? 'border-green-200 bg-green-50/50 dark:bg-green-900/10' : 'border-slate-200 dark:border-slate-700'}`}
+                >
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-xs text-red-500 line-through flex-1">{m.original}</p>
                     {!m.mastered && (
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDue(m.nextReview) ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDue(m.nextReview) ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}
+                      >
                         {dueInLabel(m.nextReview)}
                       </span>
                     )}
                   </div>
                   <p className="text-sm font-bold text-green-700 dark:text-green-300">{m.corrected}</p>
-                  {m.alternative && <p className="text-sm italic text-blue-700 dark:text-blue-300">“{m.alternative}”</p>}
-                  {m.explanation && <p className="text-[11px] text-slate-500 italic mt-1">Why: {m.explanation}</p>}
+                  {m.alternative && (
+                    <p className="text-sm italic text-blue-700 dark:text-blue-300">“{m.alternative}”</p>
+                  )}
+                  {m.explanation && (
+                    <p className="text-[11px] text-slate-500 italic mt-1">Why: {m.explanation}</p>
+                  )}
                   <div className="flex gap-2 mt-2 flex-wrap">
-                    <button onClick={() => speakAmbient(config, m.alternative || m.corrected)} className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500" title="Nghe lại" aria-label="Listen">
+                    <button
+                      onClick={() => speakAmbient(config, m.alternative || m.corrected)}
+                      className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500"
+                      title="Nghe lại"
+                      aria-label="Listen"
+                    >
                       <Volume2 size={13} />
                     </button>
                     {onPractice && (
-                      <button onClick={() => onPractice('custom' as AppMode, m.corrected)} className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 rounded-lg" title="Luyện lại lỗi này trong Custom Class">
+                      <button
+                        onClick={() => onPractice('custom' as AppMode, m.corrected)}
+                        className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 rounded-lg"
+                        title="Luyện lại lỗi này trong Custom Class"
+                      >
                         <GraduationCap size={11} /> Luyện lại
                       </button>
                     )}
-                    <button onClick={() => { markMistakeReviewed(m.id); mirrorMistakeReviewed(m.id); bump(); toast?.show('Đã review 1 lần'); }} className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg" title="Đã ôn 1 lần">
+                    <button
+                      onClick={() => setDrillSentences([m.alternative || m.corrected])}
+                      className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 rounded-lg"
+                      title="Luyện phát âm câu này"
+                    >
+                      <Mic size={11} /> Phát âm
+                    </button>
+                    <button
+                      onClick={() => {
+                        markMistakeReviewed(m.id);
+                        mirrorMistakeReviewed(m.id);
+                        bump();
+                        toast?.show('Đã review 1 lần');
+                      }}
+                      className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg"
+                      title="Đã ôn 1 lần"
+                    >
                       <RotateCcw size={11} /> Reviewed ({m.reviewCount})
                     </button>
-                    <button onClick={() => { markMistakeReviewed(m.id, true); mirrorMistakeReviewed(m.id, true); bump(); toast?.show('Mastered! Ghi nhớ tốt lắm 🎉', 'success'); }} className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-green-50 text-green-700 rounded-lg">
+                    <button
+                      onClick={() => {
+                        markMistakeReviewed(m.id, true);
+                        mirrorMistakeReviewed(m.id, true);
+                        bump();
+                        toast?.show('Mastered! Ghi nhớ tốt lắm 🎉', 'success');
+                      }}
+                      className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 bg-green-50 text-green-700 rounded-lg"
+                    >
                       <Check size={11} /> Mastered
                     </button>
-                    <button onClick={() => { deleteMistake(m.id); mirrorDeleteMistake(m.id); bump(); toast?.show('Đã xóa lỗi'); }} className="ml-auto p-1.5 text-slate-300 hover:text-red-500" aria-label="Delete mistake">
+                    <button
+                      onClick={() => {
+                        deleteMistake(m.id);
+                        mirrorDeleteMistake(m.id);
+                        bump();
+                        toast?.show('Đã xóa lỗi');
+                      }}
+                      className="ml-auto p-1.5 text-slate-300 hover:text-red-500"
+                      aria-label="Delete mistake"
+                    >
                       <Trash2 size={13} />
                     </button>
                   </div>
@@ -389,38 +633,95 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
 
           {tab === 'vocab' && (
             <>
-              {fVocab.length === 0 && q === '' && <p className="text-sm text-slate-400">Hover vào từ → bấm 📑 để lưu. Sổ từ sẽ hiện ở đây.</p>}
+              {fVocab.length === 0 && q === '' && (
+                <p className="text-sm text-slate-400">Hover vào từ → bấm 📑 để lưu. Sổ từ sẽ hiện ở đây.</p>
+              )}
               {fVocab.length > 0 && (
                 <p className="text-[11px] text-slate-400 flex items-center gap-1">
-                  <Clock size={11} /> {fVocab.filter((v) => isDue(v.nextReview)).length} due · bấm ✓ khi đã ôn xong 1 từ
+                  <Clock size={11} /> {fVocab.filter((v) => isDue(v.nextReview)).length} due · bấm ✓ khi đã ôn
+                  xong 1 từ
                 </p>
               )}
               <div className="grid gap-2">
-                {[...fVocab].sort((a, b) => Number(isDue(a.nextReview)) - Number(isDue(b.nextReview)) || (a.nextReview ?? 0) - (b.nextReview ?? 0)).map((v) => (
-                  <div key={v.id} className="flex items-center gap-3 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5">
-                    <div className="flex-1 min-w-0">
-                      <span className="font-bold text-sm dark:text-white">{v.word}</span>
-                      <span className="text-xs text-blue-600 ml-2">{v.translation}</span>
-                      {v.ipa && <span className="text-[10px] font-mono text-slate-400 ml-2">{v.ipa}</span>}
-                      {v.example && <p className="text-[11px] italic text-slate-500 truncate">“{v.example}”</p>}
-                      <p className="text-[10px] text-slate-400 mt-0.5">{dueInLabel(v.nextReview)}{v.reviewCount > 0 ? ` · reviewed ${v.reviewCount}x` : ''}</p>
-                    </div>
-                    <button onClick={() => speakAmbient(config, v.word)} className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500" aria-label={`Listen ${v.word}`}>
-                      <Volume2 size={13} />
-                    </button>
-                    {onPractice && (
-                      <button onClick={() => onPractice('daily' as AppMode, `Help me practice using the word "${v.word}" in conversation`)} className="p-1.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 rounded-lg" title="Đặt câu với từ này trong Daily" aria-label="Practice vocab">
-                        <MessageCircle size={13} />
+                {[...fVocab]
+                  .sort(
+                    (a, b) =>
+                      Number(isDue(a.nextReview)) - Number(isDue(b.nextReview)) ||
+                      (a.nextReview ?? 0) - (b.nextReview ?? 0)
+                  )
+                  .map((v) => (
+                    <div
+                      key={v.id}
+                      className="flex items-center gap-3 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <span className="font-bold text-sm dark:text-white">{v.word}</span>
+                        <span className="text-xs text-blue-600 ml-2">{v.translation}</span>
+                        {v.ipa && <span className="text-[10px] font-mono text-slate-400 ml-2">{v.ipa}</span>}
+                        {v.example && (
+                          <p className="text-[11px] italic text-slate-500 truncate">“{v.example}”</p>
+                        )}
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {dueInLabel(v.nextReview)}
+                          {v.reviewCount > 0 ? ` · reviewed ${v.reviewCount}x` : ''}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => speakAmbient(config, v.word)}
+                        className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500"
+                        aria-label={`Listen ${v.word}`}
+                      >
+                        <Volume2 size={13} />
                       </button>
-                    )}
-                    <button onClick={() => { markVocabReviewed(v.id); bump(); toast?.show(`Đã ôn "${v.word}" — lên lịch SRS lại`); }} className="p-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg" title="Đã ôn từ này (lên lịch SRS)" aria-label={`Mark ${v.word} reviewed`}>
-                      <Check size={13} />
-                    </button>
-                    <button onClick={() => { deleteVocab(v.id); mirrorDeleteVocab(v.id); bump(); toast?.show(`Đã xóa từ "${v.word}"`); }} className="p-1.5 text-slate-300 hover:text-red-500" aria-label="Delete vocab">
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                ))}
+                      {onPractice && (
+                        <button
+                          onClick={() =>
+                            onPractice(
+                              'daily' as AppMode,
+                              `Help me practice using the word "${v.word}" in conversation`
+                            )
+                          }
+                          className="p-1.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 rounded-lg"
+                          title="Đặt câu với từ này trong Daily"
+                          aria-label="Practice vocab"
+                        >
+                          <MessageCircle size={13} />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setDrillSentences([v.example || v.word])}
+                        className="p-1.5 bg-violet-50 dark:bg-violet-900/20 text-violet-600 rounded-lg"
+                        title="Luyện phát âm từ này"
+                        aria-label={`Practice pronunciation of ${v.word}`}
+                      >
+                        <Mic size={13} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          markVocabReviewed(v.id);
+                          bump();
+                          toast?.show(`Đã ôn "${v.word}" — lên lịch SRS lại`);
+                        }}
+                        className="p-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg"
+                        title="Đã ôn từ này (lên lịch SRS)"
+                        aria-label={`Mark ${v.word} reviewed`}
+                      >
+                        <Check size={13} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          deleteVocab(v.id);
+                          mirrorDeleteVocab(v.id);
+                          bump();
+                          toast?.show(`Đã xóa từ "${v.word}"`);
+                        }}
+                        className="p-1.5 text-slate-300 hover:text-red-500"
+                        aria-label="Delete vocab"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
               </div>
             </>
           )}
@@ -470,15 +771,21 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                 </button>
               </form>
               {fTasks.length === 0 && q === '' && (
-                <p className="text-sm text-slate-400 mt-2">Chưa có task nào. Đăng ký mục tiêu luyện tập bên trên.</p>
+                <p className="text-sm text-slate-400 mt-2">
+                  Chưa có task nào. Đăng ký mục tiêu luyện tập bên trên.
+                </p>
               )}
               {fTasks
                 .slice()
-                .sort((a, b) => Number(a.completed) - Number(b.completed) || (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity))
+                .sort(
+                  (a, b) =>
+                    Number(a.completed) - Number(b.completed) || (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity)
+                )
                 .map((t) => {
                   const now = Date.now();
                   const isOverdue = t.dueAt != null && t.dueAt < now && !t.completed;
-                  const isDueSoon = t.dueAt != null && t.dueAt < now + 24 * 3600 * 1000 && !t.completed && !isOverdue;
+                  const isDueSoon =
+                    t.dueAt != null && t.dueAt < now + 24 * 3600 * 1000 && !t.completed && !isOverdue;
                   return (
                     <div
                       key={t.id}
@@ -498,15 +805,27 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                         {t.completed && <Check size={11} className="text-white" />}
                       </button>
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-bold dark:text-white ${t.completed ? 'line-through text-slate-400' : ''}`}>{t.title}</p>
+                        <p
+                          className={`text-sm font-bold dark:text-white ${t.completed ? 'line-through text-slate-400' : ''}`}
+                        >
+                          {t.title}
+                        </p>
                         {t.dueAt && (
-                          <p className={`text-[11px] mt-0.5 ${isOverdue ? 'text-red-500 font-bold' : isDueSoon ? 'text-amber-500' : 'text-slate-400'}`}>
+                          <p
+                            className={`text-[11px] mt-0.5 ${isOverdue ? 'text-red-500 font-bold' : isDueSoon ? 'text-amber-500' : 'text-slate-400'}`}
+                          >
                             {isOverdue ? '⚠️ Overdue: ' : 'Due: '}
-                            {new Date(t.dueAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                            {new Date(t.dueAt).toLocaleDateString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })}
                           </p>
                         )}
                         {t.completed && t.completedAt && (
-                          <p className="text-[10px] text-slate-400 mt-0.5">✓ Completed {new Date(t.completedAt).toLocaleDateString()}</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            ✓ Completed {new Date(t.completedAt).toLocaleDateString()}
+                          </p>
                         )}
                       </div>
                       <button
@@ -528,8 +847,22 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
             </>
           )}
 
-          {tab === 'progress' && <ProgressTab progress={progress} sessions={sessions} streak={streak} xp={xp} />}
+          {tab === 'progress' && (
+            <ProgressTab progress={progress} sessions={sessions} streak={streak} xp={xp} />
+          )}
         </div>
+
+        {showReview && (
+          <ReviewSession config={config} onClose={() => setShowReview(false)} onChanged={bump} />
+        )}
+
+        {drillSentences && drillSentences.length > 0 && (
+          <PronunciationDrill
+            config={config}
+            sentences={drillSentences}
+            onClose={() => setDrillSentences(null)}
+          />
+        )}
       </div>
     </div>
   );

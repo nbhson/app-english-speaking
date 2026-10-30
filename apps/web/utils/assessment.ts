@@ -38,8 +38,7 @@ export function parseAssessmentBlock(content: string): Partial<SessionAssessment
   return out;
 }
 
-export function deriveInsight(a: SessionAssessment): string {
-  const skills: [string, number][] = [
+export function deriveInsight(a: SessionAssessment): string {  const skills: [string, number][] = [
     ['Fluency', a.fluency],
     ['Listening', a.listening],
     ['Reflexing', a.reflexing],
@@ -58,4 +57,23 @@ export function deriveInsight(a: SessionAssessment): string {
   return strong === weak
     ? `You're consistently at ${strong}/5 across the board. Keep practicing — small daily sessions will push you to the next level.`
     : `💪 Strongest: ${strongLabel} (${strong}/5). 🎯 Focus: ${weakLabel} (${weak}/5) — the biggest gain is waiting there.`;
+}
+
+/** Skill key or the special 'overall' bucket used by the ProgressTab trend chart. */
+export type TrendMetric = keyof SessionAssessment | 'overall';
+
+/** Per-session value of a metric for the cross-session trend chart:
+ *  'overall' → explicit `avgScore`; a skill key → the LAST assessment entry in
+ *  the transcript that carries that skill (the AI updates scores per turn).
+ *  Returns null when the session has no data for the metric. */
+export function sessionMetricValue(s: { avgScore: number; transcript: Array<{ assessment?: Partial<SessionAssessment> }> }, metric: TrendMetric): number | null {
+  if (metric === 'overall') {
+    const v = Number(s.avgScore);
+    return Number.isFinite(v) && v > 0 ? v : null;
+  }
+  for (let i = s.transcript.length - 1; i >= 0; i--) {
+    const v = Number(s.transcript[i].assessment?.[metric]);
+    if (Number.isFinite(v) && v > 0) return v;
+  }
+  return null;
 }

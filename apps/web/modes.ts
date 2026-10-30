@@ -128,7 +128,7 @@ export const MODE_CONFIGS: Record<AppMode, ModeConfig> = {
     mode: AppMode.TRANSLATE,
     title: 'VN → EN Helper',
     tagline: 'Dịch theo context, tự nhiên',
-    description: 'Nhập tiếng Việt → nhận 2-3 options theo casual/business/formal + sắc thái. 1-tap lưu vocab.',
+    description: 'Nói/gõ tiếng Việt → nhận 2-3 options theo casual/business/formal + sắc thái. 1-tap lưu vocab.',
     accent: 'bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800/40 text-rose-700 dark:text-rose-300',
     dot: 'bg-rose-500',
     coachRole: 'Translator',
@@ -141,7 +141,32 @@ export const MODE_CONFIGS: Record<AppMode, ModeConfig> = {
     ],
     phraseBank: [],
     rubric: 'Trả 2-3 options: Natural (khuyên dùng) / Casual / Formal + 1 dòng nuance tiếng Việt. Luôn hỏi 1 câu chốt.',
-    tip: 'Thêm context trong câu Việt: "nói với sếp" / "nhắn bạn" để dịch chuẩn hơn.',
+    tip: 'Nói hoặc gõ tiếng Việt đều được — thêm context: "nói với sếp" / "nhắn bạn" để dịch chuẩn hơn.',
+  },
+  [AppMode.ROLEPLAY]: {
+    mode: AppMode.ROLEPLAY,
+    title: 'Roleplay Scenario',
+    tagline: 'Đóng vai tình huống thật',
+    description: 'AI đóng vai nhân vật: phỏng vấn, đàm phán, chăm sóc khách hàng… Bạn phải xử lý tình huống bằng tiếng Anh.',
+    accent: 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-200 dark:border-cyan-800/40 text-cyan-700 dark:text-cyan-300',
+    dot: 'bg-cyan-500',
+    coachRole: 'Character',
+    skills: ['Improvisation', 'Persuasion', 'Under pressure'],
+    starters: ['Interview me for a senior dev role', 'Bury me in scope creep', 'Complain hard'],
+    scenarios: [
+      { id: 'interview', label: 'Job Interview', icon: '🎯', setup: 'CHARACTER: a hiring manager interviewing the student for a senior developer position. Ask ONE realistic behavioral/technical question per turn, react naturally to answers, take notes like a real interviewer. Stay in character.' },
+      { id: 'client-call', label: 'Client Negotiation', icon: '🤝', setup: 'CHARACTER: a demanding client pushing for more scope, shorter deadline, lower price. Push hard but realistically; accept good arguments. Stay in character.' },
+      { id: 'support', label: 'Angry Customer', icon: '😤', setup: 'CHARACTER: an upset customer with a broken order/product. Be emotional but fair — calm down if the student de-escalates well. Stay in character.' },
+      { id: 'networking', label: 'Tech Meetup', icon: '🎉', setup: 'CHARACTER: a friendly developer at a tech meetup. Make small talk, exchange projects, exchange contacts naturally. Stay in character.' },
+    ],
+    phraseBank: [
+      'Let me make sure I understand...',
+      'Here is what I can do for you...',
+      'That is a fair point, however...',
+      'Could you tell me more about...?',
+    ],
+    rubric: 'Stay 100% in character. React like the character would — only emit [Correction] for impactful errors. At session end (final assessment), break character and give scene feedback.',
+    tip: 'Cứ phản xạ như tình huống thật — sai đừng dừng, sửa rồi nói tiếp. AI vẫn lưu lỗi để ôn sau.',
   },
 };
 
@@ -151,4 +176,5 @@ export const MODE_PROMPT_SNIPPET: Record<AppMode, string> = {
   [AppMode.PRESENTATION]: `STAGE COACH: Coach presentation structure (Hook → 3 points → Close), signposting, pace. Ideal pace 130-160 WPM. Call out fillers specifically. In Q&A stage ask ONE tough question per turn.`,
   [AppMode.CUSTOM]: `CLASSROOM TEACHER: Teach ONE micro-point per turn: formula → 2 quoted examples → ONE drill task. Correct in detail with formula reminder + common VN-learner mistake. End every turn with ONE task. Final assessment must include a 3-question mini-quiz.`,
   [AppMode.TRANSLATE]: `CONTEXT TRANSLATOR: Give 2-3 English options (⭐ Natural / Casual / Formal) in quotes + 1-line Vietnamese nuance each. Keep it short. End with at most ONE brief follow-up. Respond in Vietnamese, English only inside quotes.`,
+  [AppMode.ROLEPLAY]: `ROLEPLAY ACTOR: Stay 100% in character for the whole scene — react the way the character would, never break character, never explain that you are an AI. Keep replies short and spoken (1-3 sentences), ask or push like the character would, and WAIT for the student. Still emit [Correction] blocks for impactful errors (the app hides them from the scene). Only in the FINAL assessment turn, break character briefly: give scene feedback (what worked, what to say differently) in 2-3 sentences.`,
 };

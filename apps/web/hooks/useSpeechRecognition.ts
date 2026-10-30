@@ -135,13 +135,7 @@ export function useSpeechRecognition(args: UseSpeechRecognitionArgs): UseSpeechR
   const resumeListening = useCallback(() => {
     const s = argsRef.current.getStatus();
     if (!s.autoListen) return;
-    if (
-      s.active &&
-      s.mode !== AppMode.TRANSLATE &&
-      s.engine === 'browser' &&
-      !s.processing &&
-      !s.speaking
-    ) {
+    if (s.active && s.engine === 'browser' && !s.processing && !s.speaking) {
       // Keep the original turn start while buffering across recognition restarts.
       if (!speechBufferRef.current.trim() && !interimRef.current.trim()) {
         argsRef.current.onTurnStart();
@@ -154,13 +148,14 @@ export function useSpeechRecognition(args: UseSpeechRecognitionArgs): UseSpeechR
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
       argsRef.current.onError(
-        'Web Speech API is not supported in this browser. Use Chrome/Edge, or switch STT to Custom Provider in Settings.',
+        'Web Speech API is not supported in this browser. Use Chrome/Edge, or switch STT to Custom Provider in Settings.'
       );
       return;
     }
     try {
       const rec = new SR();
-      rec.lang = 'en-US';
+      // VN→EN mode listens for VIETNAMESE speech; all other modes listen for English.
+      rec.lang = argsRef.current.getStatus().mode === AppMode.TRANSLATE ? 'vi-VN' : 'en-US';
       rec.continuous = true;
       rec.interimResults = true;
       rec.maxAlternatives = 1;
@@ -198,7 +193,7 @@ export function useSpeechRecognition(args: UseSpeechRecognitionArgs): UseSpeechR
         console.error('Speech recognition error:', event.error);
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
           argsRef.current.onFatalError(
-            'Microphone not allowed for speech recognition. Check browser permissions.',
+            'Microphone not allowed for speech recognition. Check browser permissions.'
           );
         }
         // no-speech / audio-capture: transient — rely on onend restart
@@ -239,10 +234,7 @@ export function useSpeechRecognition(args: UseSpeechRecognitionArgs): UseSpeechR
         if (e.data.size > 0) recordingChunksRef.current.push(e.data);
       };
       recorder.onstop = () => {
-        const blob = new Blob(
-          recordingChunksRef.current,
-          { type: recorder.mimeType || 'audio/webm' },
-        );
+        const blob = new Blob(recordingChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
         setIsRecording(false);
         recorderRef.current = null;
         if (blob.size > 0 && argsRef.current.getStatus().active) {
@@ -274,10 +266,7 @@ export function useSpeechRecognition(args: UseSpeechRecognitionArgs): UseSpeechR
     interimRef.current = '';
   }, [clearSilenceTimer]);
 
-  const pendingSpeech = useCallback(
-    () => `${speechBufferRef.current} ${interimRef.current}`.trim(),
-    [],
-  );
+  const pendingSpeech = useCallback(() => `${speechBufferRef.current} ${interimRef.current}`.trim(), []);
 
   return {
     isListening,

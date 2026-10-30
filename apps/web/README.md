@@ -48,7 +48,8 @@
 |---|---|
 | 🎙️ **Voice conversation trực tiếp** | Nói chuyện với AI Coach như hai người: nghe → trả lời → đọc lại bằng giọng nói |
 | 🧠 **AI model cấu hình được** | Base URL / API key / model chỉnh ngay trong app (Settings ⚙️), lưu vào `localStorage` |
-| 🎯 **5 chế độ luyện tập** | Daily / Meeting / Presentation / Custom Class / VN→EN Helper — mỗi mode có scenario, phrase-bank và rubric chấm riêng (`modes.ts`) |
+| 🎯 **6 chế độ luyện tập** | Daily / Meeting / Presentation / Custom Class / VN→EN Helper / Roleplay — mỗi mode có scenario, phrase-bank và rubric chấm riêng (`modes.ts`) |
+| 🎭 **Roleplay Scenario** | AI đóng vai nhân vật (interviewer, khách hàng khó tính, client đòi thêm scope…) — bạn xử lý tình huống bằng tiếng Anh, AI sửa lỗi ngầm và feedback khi kết thúc |
 | 🧑‍🏫 **Custom Class (classroom)** | AI đóng vai giáo viên: giảng 1 micro-point → 2 ví dụ → 1 drill → sửa chi tiết, cuối buổi quiz 3 câu |
 | 🛠️ **Real-time Correction** | Model phát hiện lỗi sai → hiện thẻ **Correction**: Original / Corrected / Better Alternative / Why |
 | 💡 **Natural Phrasing** | Gợi ý cách diễn đạt tự nhiên hơn cho từng câu của bạn |
@@ -61,6 +62,11 @@
 | 📜 **Auto-scroll chat** | Main content tự động cuộn xuống tin nhắn mới nhất khi có nội dung mới — kể cả khi AI đang stream từng chữ |
 | 🎨 **Dark / Light mode** | Giao diện tối/sáng, nhớ lựa chọn của bạn. Dark theme dùng tông **đen/xám trung tính**, accent xanh dương chuẩn |
 | ⏱️ **Session stats** | Thời lượng phiên, WPM + filler words (đo local từ transcript), điểm từ vựng + confidence (AI chấm), streak/XP |
+| 🃏 **Review flashcard SRS** | Banner **Ôn ngay** trong Library: drill flashcard cho thẻ Mistakes/Vocab đến hạn — hiện đáp án → tự chấm *Nhớ rồi / Chưa nhớ*, thẻ chưa nhớ tự lặp lại cuối buổi; lịch SRS cập nhật theo Leitner (1→3→7→14→30→60 ngày) |
+| 📈 **Score trend** | Tab Progress: line chart điểm theo thời gian (tối đa 30 buổi) — chọn *Overall* hoặc từng kỹ năng; badge ↑/↓ so 3 buổi gần nhất với 3 buổi trước |
+| 🎯 **Daily Challenge** | Mỗi ngày 1 thử thách ngắn sinh tự động theo ngày (12 template, không cần server) — hoàn thành đúng scenario + đủ lượt nói → **+50 XP** bonus vào streak |
+| 🗣️ **Pronunciation Drill** | Luyện phát âm từ Library (vocab/mistakes): nghe câu mẫu (TTS) → giữ để ghi âm → STT nhận diện → chấm 0-100 theo độ khớp từng từ, từ sai/thiếu tô màu |
+| 🧗 **Adaptive difficulty** | Sau ≥3 buổi có điểm: gợi ý nâng (avg ≥ 4.4) hoặc hạ (avg ≤ 2.2) difficulty — luôn hỏi trước, không tự đổi |
 | 🧭 **Header + panels đồng bộ** | Top bar nổi `rounded-2xl` cùng chiều ngang `<main>`; nút thu/mở Sidebar và Assessment nằm trên chính panel đó, không nằm trên top bar |
 
 ---
@@ -166,7 +172,8 @@ App hoạt động với **bất kỳ gateway AI nào hỗ trợ API OpenAI-comp
 | 💼 **Business Meeting** | `💼` | Mô phỏng họp thật: Standup/Planning/Retro/Client call, có phrase-bank business, cuối buổi tóm tắt action items |
 | 📊 **Presentation Skills** | `📊` | 3 stage: Outline → Deliver 1-2 phút → Tough Q&A, chấm structure/pace (130-160 WPM)/filler/signposting |
 | 🎓 **Custom Class** | `🎓` | Lớp 1-1: nhập 1 chủ điểm + chọn goal (Hiểu/Dùng/Quiz) → AI giảng → ví dụ → drill → sửa chi tiết |
-| 🇻🇳 **VN to EN Helper** | `🇻🇳` | Gõ câu tiếng Việt + chọn context (Casual/Business/Formal email) → 2-3 options + nuance tiếng Việt |
+| 🇻🇳 **VN to EN Helper** | `🇻🇳` | Nói hoặc gõ câu tiếng Việt + chọn context (Casual/Business/Formal email) → 2-3 options + nuance tiếng Việt |
+| 🎭 **Roleplay Scenario** | `🎭` | AI đóng vai: Job Interview / Client Negotiation / Angry Customer / Tech Meetup — xử lý tình huống thật, AI luôn ở trong vai |
 
 ---
 
@@ -187,7 +194,7 @@ App hoạt động với **bất kỳ gateway AI nào hỗ trợ API OpenAI-comp
 
 ### Chế độ VN→EN Helper
 
-1. Gõ câu tiếng Việt vào ô nhập
+1. **Nói** (mic nghe tiếng Việt, STT `vi-VN`) **hoặc gõ** câu tiếng Việt vào ô nhập
 2. Model trả về: gợi ý tiếng Anh tự nhiên + giải thích bằng tiếng Việt
 3. Dùng nút **X** để dừng phiên (Stop Session)
 
@@ -271,8 +278,10 @@ ai-english-speaking-coach/
 └── components/
 │   ├── SettingsModal.tsx        # UI cấu hình kết nối AI (localStorage)
 │   ├── Header.tsx               # Top bar nổi (logo + Library + Settings + theme)
-│   ├── Sidebar.tsx              # Danh sách 5 modes + tip theo mode
+│   ├── Sidebar.tsx              # Danh sách 6 modes + tip theo mode
 │   ├── AssessmentPanel.tsx      # Session Statistics + Comprehensive Assessment theo mode
+│   ├── ReviewSession.tsx        # Ôn tập SRS flashcard (Mistakes + Vocab đến hạn)
+│   ├── ProgressTab.tsx          # Weekly goal ring + stat tiles + Score trend chart + 14-day chart
 │   └── LibraryPanel.tsx         # History / Mistakes / Vocab / Progress + nút luyện lại
 └── utils/
     └── api.ts                   # Config + custom provider client (chat/STT/TTS + translate)
@@ -330,9 +339,15 @@ ai-english-speaking-coach/
 - [x] Browser voice picker + tốc độ/pitch + Test voice
 - [x] Lưu lịch sử session + sổ lỗi [Correction] + sổ từ vựng + streak/XP + chart 14 ngày
 - [x] Metrics thật: WPM, filler words, CEFR badge, XP/session
+- [x] Review flashcard SRS (Mistakes + Vocab đến hạn) + Score trend chart theo kỹ năng
 - [x] Custom Class classroom (AI = teacher) + prompt riêng từng mode + scenario/phrase-bank
 - [x] Header nổi đồng bộ `<main>`, thu/mở panel ngay trên panel
-- [ ] Mode Shadowing (đã loại bỏ — thay bằng Custom Class)
+- [x] Review flashcard SRS (Mistakes + Vocab đến hạn) + Score trend chart theo kỹ năng
+- [x] Daily Challenge hằng ngày (deterministic theo ngày, +50 XP bonus)
+- [x] Roleplay Scenario mode (AI đóng vai, auto mở cảnh, sửa lỗi ngầm)
+- [x] Voice cho VN→EN (mic nghe tiếng Việt, STT vi-VN)
+- [x] Pronunciation Drill: ghi âm → STT → chấm độ khớp từng từ với câu mẫu
+- [x] Adaptive difficulty: gợi ý nâng/hạ difficulty theo điểm 3 buổi gần nhất
 - [x] Difficulty (beginner/intermediate/advanced) + Persona + custom system prompt
 - [x] Nhiều profile config cho nhiều provider
 - [x] Vitest: assessment parser + speech metrics (5 tests)

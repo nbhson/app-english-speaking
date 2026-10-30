@@ -10,8 +10,8 @@
 
 1. **Một accent duy nhất**: `blue-600` cho CTA / active / focus. Mọi CTA nổi, link,
    trạng thái active đều dùng blue — không accent cạnh tranh.
-2. **Mode identity = dot + chip nhỏ**: 5 màu mode (emerald / blue / violet / amber /
-   rose trong `modes.ts`) chỉ xuất hiện ở **dot 8px** và **tinted chip nhẹ**
+2. **Mode identity = dot + chip nhỏ**: 6 màu mode (emerald / blue / violet / amber /
+   rose / cyan trong `modes.ts`) chỉ xuất hiện ở **dot 8px** và **tinted chip nhẹ**
    (`accent` class — bg tint `50`/`900/20`, không tô full-panel, không shadow).
    Teal chỉ dùng trong bảng Assessment (data identity, khỏi đổi).
 3. **Depth bằng border, không shadow**: card = border `1px` slate-200/800, nền
@@ -94,9 +94,9 @@
 
 - ✅ Đã chuẩn hóa: Header, App shell (3 panel, banners, toolbar, mobile sheet),
   Sidebar, StartScreen (aurora), ControlBar, AssessmentPanel (mono numerals),
-  CorrectionCard, Toast, ErrorBoundary, ProgressTab, SelectionTranslator,
-  HoverableWord, SettingsModal, Onboarding, LibraryPanel,
-  GuidedTour (driver.js popover theme `.fd-tour-popover`).
+  CorrectionCard, Toast, ErrorBoundary, ProgressTab (kèm Score trend chart),
+  SelectionTranslator, HoverableWord, SettingsModal, Onboarding, LibraryPanel,
+  ReviewSession (SRS flashcard), PronunciationDrill (F10), GuidedTour (driver.js popover theme `.fd-tour-popover`).
 - ⏳ Còn giữ nguyên (chấp nhận có chủ đích): chat bubble `rounded-2xl`
   (`ChatMessageList`), pill chips `rounded-full`, SRS tabs chi tiết trong
   LibraryPanel nếu thêm mới hãy theo checklist.

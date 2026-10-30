@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { Target } from 'lucide-react';
-import type { AppMode } from '../types';
-import type { ProgressDay, SessionRecord } from '../types';
+import React, { useMemo, useState } from 'react';
+import { Target, TrendingUp } from 'lucide-react';
+import type { AppMode, ProgressDay, SessionRecord } from '../types';
 import { MODE_CONFIGS } from '../modes';
+import { sessionMetricValue, type TrendMetric } from '../utils/assessment';
 import {
   bestStreak, getWeeklyGoalMinutes, last7DaysStats, minutesThisWeek,
   modeDistribution, setWeeklyGoalMinutes,
@@ -15,6 +15,125 @@ const StatTile: React.FC<{ value: React.ReactNode; label: string; title?: string
     <div className="text-[11px] font-bold text-slate-400 uppercase">{label}</div>
   </div>
 );
+
+// --- F8 — Score trend (cross-session skill progression) ---
+
+const SKILL_OPTIONS: Array<{ key: TrendMetric; label: string }> = [
+  { key: 'overall', label: 'Overall avg' },
+  { key: 'fluency', label: 'Fluency' },
+  { key: 'listening', label: 'Listening' },
+  { key: 'reflexing', label: 'Reflexing' },
+  { key: 'sentenceFlexibility', label: 'Sentence Flexibility' },
+  { key: 'vocabularyFlexibility', label: 'Vocabulary Flexibility' },
+  { key: 'intonation', label: 'Intonation' },
+  { key: 'linking', label: 'Linking' },
+  { key: 'finalSound', label: 'Final Sound' },
+  { key: 'stress', label: 'Stress' },
+];
+const MAX_TREND_POINTS = 30;
+
+/** SVG line chart of a metric across chronological sessions (0–5 scale). */
+const ScoreTrend: React.FC<{ sessions: SessionRecord[] }> = ({ sessions }) => {
+  const [metric, setMetric] = useState<string>('overall');
+
+  const points = useMemo(() => {
+    const chrono = [...sessions].sort((a, b) => a.startedAt - b.startedAt).slice(-MAX_TREND_POINTS);
+    return chrono
+      .map((s) => ({ startedAt: s.startedAt, value: sessionMetricValue(s, metric as TrendMetric) }))
+      .filter((p): p is { startedAt: number; value: number } => p.value !== null);
+  }, [sessions, metric]);
+
+  const W = 320;
+  const H = 120;
+  const PAD_L = 22;
+  const PAD_R = 6;
+  const PAD_T = 8;
+  const PAD_B = 14;
+  const x = (i: number) => (points.length <= 1 ? (PAD_L + W - PAD_R) / 2 : PAD_L + (i * (W - PAD_L - PAD_R)) / (points.length - 1));
+  const y = (v: number) => H - PAD_B - (v / 5) * (H - PAD_T - PAD_B);
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
+  const area = points.length > 1 ? `${path} L${x(points.length - 1).toFixed(1)},${H - PAD_B} L${x(0).toFixed(1)},${H - PAD_B} Z` : '';
+
+  // Momentum: mean of last 3 points vs previous 3 (needs ≥ 4 points).
+  const delta = useMemo(() => {
+    if (points.length < 4) return null;
+    const mean = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
+    const recent = mean(points.slice(-3).map((p) => p.value));
+    const before = mean(points.slice(-6, -3).map((p) => p.value));
+    return recent - before;
+  }, [points]);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between flex-wrap gap-2 mt-2 mb-2">
+        <h4 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-1.5">
+          <TrendingUp size={13} aria-hidden /> Score trend
+          {delta !== null && Number.isFinite(delta) && Math.abs(delta) >= 0.05 && (
+            <span
+              className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                delta > 0 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+              }`}
+              title="So sánh 3 buổi gần nhất với 3 buổi trước đó"
+            >
+              {delta > 0 ? '↑' : '↓'} {Math.abs(delta).toFixed(1)}
+            </span>
+          )}
+        </h4>
+        <select
+          value={metric}
+          onChange={(e) => setMetric(e.target.value)}
+          className="text-[11px] font-bold border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 outline-none focus:ring-2 focus:ring-blue-500/60"
+          aria-label="Chọn kỹ năng để xem xu hướng"
+        >
+          {SKILL_OPTIONS.map((o) => (
+            <option key={o.key} value={o.key}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+      <div className={`${cardCls} p-3`}>
+        {points.length < 2 ? (
+          <p className="text-xs text-slate-400 text-center py-8">
+            Cần ít nhất 2 buổi có điểm để vẽ xu hướng — hãy luyện thêm nhé!
+          </p>
+        ) : (
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label={`Xu hướng ${SKILL_OPTIONS.find((o) => o.key === metric)?.label ?? metric} qua ${points.length} buổi`}>
+            {[1, 2, 3, 4, 5].map((v) => (
+              <g key={v}>
+                <line x1={PAD_L} x2={W - PAD_R} y1={y(v)} y2={y(v)} className="stroke-slate-100 dark:stroke-slate-800" strokeWidth="1" />
+                <text x={PAD_L - 4} y={y(v) + 3} textAnchor="end" className="fill-slate-300 dark:fill-slate-600" fontSize="8">{v}</text>
+              </g>
+            ))}
+            {area && <path d={area} fill="url(#trendFill)" opacity="0.35" />}
+            <defs>
+              <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="hsl(217 91% 60%)" stopOpacity="0.5" />
+                <stop offset="100%" stopColor="hsl(217 91% 60%)" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <path d={path} fill="none" stroke="hsl(217 91% 60%)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+            {points.map((p, i) => (
+              <circle
+                key={p.startedAt}
+                cx={x(i)}
+                cy={y(p.value)}
+                r={i === points.length - 1 ? 3.5 : 2.2}
+                className="fill-blue-600 dark:fill-blue-400"
+              >
+                <title>{`${new Date(p.startedAt).toLocaleDateString()}: ${p.value.toFixed(1)}/5`}</title>
+              </circle>
+            ))}
+            <text x={PAD_L} y={H - 3} className="fill-slate-300 dark:fill-slate-600" fontSize="8">
+              {new Date(points[0].startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+            </text>
+            <text x={W - PAD_R} y={H - 3} textAnchor="end" className="fill-slate-300 dark:fill-slate-600" fontSize="8">
+              {new Date(points[points.length - 1].startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+            </text>
+          </svg>
+        )}
+      </div>
+    </div>
+  );
+};
 
 /** SVG progress ring for the weekly goal (F1). */
 export const ProgressTab: React.FC<{
@@ -130,6 +249,9 @@ export const ProgressTab: React.FC<{
         <StatTile value={`🏅 ${best}`} label="best streak" title="Chuỗi ngày học liên tiếp dài nhất" />
         <StatTile value={avgScore !== null ? `⭐ ${avgScore.toFixed(1)}` : '—'} label="avg score /5" title="Điểm trung bình các buổi gần nhất" />
       </div>
+
+      {/* F8 — Cross-session score/skill trend */}
+      <ScoreTrend sessions={sessions} />
 
       {/* Mode distribution */}
       {dist.length > 0 && (

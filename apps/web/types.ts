@@ -4,7 +4,8 @@ export enum AppMode {
   MEETING = 'meeting',
   PRESENTATION = 'presentation',
   CUSTOM = 'custom',
-  TRANSLATE = 'translate'
+  TRANSLATE = 'translate',
+  ROLEPLAY = 'roleplay',
 }
 
 export type Difficulty = 'beginner' | 'intermediate' | 'advanced';
@@ -36,6 +37,7 @@ export interface TranscriptionEntry {
   wpm?: number; // measured speaking speed for user turns
   fillerCount?: number; // filler words detected in user turns
   error?: boolean; // connection failure marker — excluded from context & saved transcripts
+  hidden?: boolean; // internal kick-off turn (e.g. roleplay opener) — not rendered in chat
 }
 
 export interface SpeechMetrics {

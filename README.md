@@ -2,7 +2,7 @@
 # FluentDev — monorepo
 
 AI English Speaking Coach cho developers: luyện nói (Daily / Meeting / Presentation /
-Custom Class / VN→EN) qua voice turn-based với AI Coach.
+Custom Class / VN→EN / Roleplay) qua voice turn-based với AI Coach.
 
 ```
 .

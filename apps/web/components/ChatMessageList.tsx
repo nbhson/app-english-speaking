@@ -89,7 +89,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
 }) => (
   <>
     {intro}
-    {entries.map((t) => {
+    {entries.filter((t) => !t.hidden).map((t) => {
       const chatLang = langFor(mode);
       return (
         <div key={t.id} className={`flex flex-col ${t.role === 'user' ? 'items-end' : 'items-start'} space-y-2`}>

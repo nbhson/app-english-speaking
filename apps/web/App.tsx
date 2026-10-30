@@ -1,26 +1,27 @@
-import React, { useState, useEffect, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 // LazyMotion + m (+ domAnimation): chỉ bundle engine animation cơ bản, bỏ
 // layout-projection/drag của motion-dom → initial chunk nhỏ hơn đáng kể.
 // strict = nếu ai import `motion` (full) sẽ throw ngay ở dev.
 import { LazyMotion, AnimatePresence, m } from 'motion/react';
-import { TriangleAlert, ChevronsLeft, ChevronsRight, X, PanelLeft, PanelRight, ShieldCheck } from 'lucide-react';
-import { AppMode, SessionState, TranscriptionEntry } from './types';
-import { SYSTEM_INSTRUCTION, DIFFICULTY_PROMPT, PERSONA_PROMPT } from './constants';
-import { MODE_CONFIGS, MODE_PROMPT_SNIPPET } from './modes';
 import {
-  AIConfig,
-  ChatMessage,
-  loadConfig,
-  saveConfig,
-  translatePhrase,
-  transcribe,
-} from './utils/api';
+  TriangleAlert,
+  ChevronsLeft,
+  ChevronsRight,
+  X,
+  PanelLeft,
+  PanelRight,
+  ShieldCheck,
+} from 'lucide-react';
+import { AppMode, SessionState, TranscriptionEntry } from './types';
+import { MODE_CONFIGS } from './modes';
+import { buildSystemPrompt, finishPrompt } from './utils/promptBuilder';
+import { AIConfig, ChatMessage, loadConfig, saveConfig, translatePhrase, transcribe } from './utils/api';
 // Heavy, user-triggered surfaces — split into async chunks (loaded on first open).
 const LibraryPanel = React.lazy(() =>
-  import('./components/LibraryPanel').then((mod) => ({ default: mod.LibraryPanel })),
+  import('./components/LibraryPanel').then((mod) => ({ default: mod.LibraryPanel }))
 );
 const SettingsModal = React.lazy(() =>
-  import('./components/SettingsModal').then((mod) => ({ default: mod.SettingsModal })),
+  import('./components/SettingsModal').then((mod) => ({ default: mod.SettingsModal }))
 );
 import { Header } from './components/Header';
 import { AuthModal } from './components/AuthModal';
@@ -36,19 +37,36 @@ import { INITIAL_ASSESSMENT, parseAssessmentBlock } from './utils/assessment';
 import { analyzeSpeech, avgSkill, xpForSession } from './utils/speechMetrics';
 import { isBrowserSTTSupported } from './utils/browser';
 import {
-  saveSession, addMistake, logSessionProgress,
-  getStreak, totalXP, transcriptToMarkdown, downloadText,
+  saveSession,
+  addMistake,
+  logSessionProgress,
+  getStreak,
+  totalXP,
+  transcriptToMarkdown,
+  downloadText,
+  getSessions,
 } from './utils/storage';
+import {
+  suggestDifficulty,
+  getDismissedSuggestion,
+  setDismissedSuggestion,
+  type Difficulty,
+} from './utils/adaptive';
+import { getDailyChallenge, isDailyDone, markDailyDone, type DailyChallenge } from './utils/dailyChallenge';
 import { mirrorSession, mirrorMistake, mirrorProgress, migrateLocalToServer } from './utils/serverStore';
 import { cachedUser, fetchMe, logout, type AuthUser } from './utils/auth';
 import { uid } from './utils/uid';
 import { loadUiPrefs, saveUiPrefs } from './utils/uiPrefs';
 import {
-  extractBlock, extractBlocks, parseCorrectionBlock, extractCorrectionSuggestion,
+  extractBlock,
+  extractBlocks,
+  parseCorrectionBlock,
+  extractCorrectionSuggestion,
 } from './utils/aiBlocks';
 import { speakCoachText, stopCoachSpeech, prepareSpeakable } from './utils/tts';
 import { runChatStream } from './utils/chatRunner';
 import { useSpeechRecognition } from './hooks/useSpeechRecognition';
+import { useDarkMode } from './hooks/useDarkMode';
 
 // Stable, non-render-time clock (React Hooks purity-friendly).
 const now = () => Date.now();
@@ -63,7 +81,12 @@ const FIRST_SCENARIO: Record<AppMode, string> = {
   [AppMode.PRESENTATION]: 'outline',
   [AppMode.CUSTOM]: 'understand',
   [AppMode.TRANSLATE]: 'casual',
+  [AppMode.ROLEPLAY]: 'interview',
 };
+
+/** Hidden first turn that makes the AI open the roleplay scene in character. */
+const ROLEPLAY_KICK =
+  '(Roleplay start: open the scene in character — greet/set the situation in 1-2 sentences, then wait for my response.)';
 
 const App: React.FC = () => {
   const [config, setConfig] = useState<AIConfig>(() => loadConfig());
@@ -112,7 +135,7 @@ const App: React.FC = () => {
     const scenarios = MODE_CONFIGS[mode]?.scenarios;
     const scenarioId = scenarios?.some((s) => s.id === p.scenarioId)
       ? p.scenarioId
-      : scenarios?.[0]?.id ?? FIRST_SCENARIO[mode];
+      : (scenarios?.[0]?.id ?? FIRST_SCENARIO[mode]);
     return {
       mode,
       scenarioId: scenarioId as string,
@@ -122,26 +145,7 @@ const App: React.FC = () => {
     };
   });
 
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('theme');
-      return saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    }
-    return false;
-  });
-
-  const toggleDarkMode = () => {
-    setIsDarkMode((prev) => {
-      const next = !prev;
-      localStorage.setItem('theme', next ? 'dark' : 'light');
-      return next;
-    });
-  };
-
-  useEffect(() => {
-    if (isDarkMode) document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-  }, [isDarkMode]);
+  const { isDarkMode, toggleDarkMode } = useDarkMode();
 
   const [session, setSession] = useState<SessionState>({
     isActive: false,
@@ -156,8 +160,8 @@ const App: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [showSidebar, setShowSidebar] = useState(initialPrefs.showSidebar);
-  const [showAssessment, setShowAssessment] = useState(() =>
-    initialPrefs.showAssessment ?? (typeof window !== 'undefined' ? window.innerWidth >= 1024 : true),
+  const [showAssessment, setShowAssessment] = useState(
+    () => initialPrefs.showAssessment ?? (typeof window !== 'undefined' ? window.innerWidth >= 1024 : true)
   );
   const [inputText, setInputText] = useState('');
   const [customTopic, setCustomTopic] = useState(initialPrefs.customTopic);
@@ -186,6 +190,17 @@ const App: React.FC = () => {
   const [announce, setAnnounce] = useState('');
   // F2: first-run onboarding tour (replayable from Settings).
   const [showTour, setShowTour] = useState(() => (typeof window !== 'undefined' ? !isOnboarded() : false));
+  // F9: Daily Challenge — deterministic per local day; completion in localStorage.
+  const [dailyChallenge] = useState(() => getDailyChallenge());
+  const [dailyDone, setDailyDone] = useState(() => isDailyDone());
+  // F11: adaptive difficulty suggestion (computed from saved sessions).
+  const [dismissedSuggestion, setDismissedState] = useState(() => getDismissedSuggestion());
+  const difficultySuggestion = useMemo(
+    () => suggestDifficulty(getSessions(), config.difficulty ?? 'intermediate'),
+    // libraryEpoch bumps when the Library closes → recompute with fresh sessions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [config.difficulty, libraryEpoch]
+  );
 
   // Refs that async callbacks read to avoid stale closures.
   const configRef = useRef(config);
@@ -212,11 +227,20 @@ const App: React.FC = () => {
   // cũ KHÔNG được force-stop session mới (bug trước đây).
   const sessionEpochRef = useRef(0);
   const finishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dailyChallengeRef = useRef<DailyChallenge>(dailyChallenge);
 
-  useEffect(() => { configRef.current = config; }, [config]);
-  useEffect(() => { transcriptionsRef.current = transcriptions; }, [transcriptions]);
-  useEffect(() => { customTopicRef.current = customTopic; }, [customTopic]);
-  useEffect(() => { scenarioRef.current = scenarioId; }, [scenarioId]);
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
+  useEffect(() => {
+    transcriptionsRef.current = transcriptions;
+  }, [transcriptions]);
+  useEffect(() => {
+    customTopicRef.current = customTopic;
+  }, [customTopic]);
+  useEffect(() => {
+    scenarioRef.current = scenarioId;
+  }, [scenarioId]);
 
   // Auth boot: hỏi server session hiện tại (cookie). fetchMe() fallback về
   // cachedUser() khi server không chạy — user đã login trước đó vẫn vào được
@@ -328,25 +352,8 @@ const App: React.FC = () => {
 
   // --- Prompt & streaming ---
 
-  const systemPrompt = (mode: AppMode) => {
-    const cfg = configRef.current;
-    if (cfg.systemPromptOverride?.trim()) return cfg.systemPromptOverride;
-    const extra = `\n\nSTUDENT LEVEL: ${DIFFICULTY_PROMPT[cfg.difficulty ?? 'intermediate']}\nCOACH TONE: ${PERSONA_PROMPT[cfg.persona ?? 'encouraging']}`;
-    const modeSnippet = MODE_PROMPT_SNIPPET[mode] ?? '';
-    const scenario = MODE_CONFIGS[mode]?.scenarios?.find((s) => s.id === scenarioRef.current);
-    const scenarioLine = scenario ? `\nSCENARIO: ${scenario.label} — ${scenario.setup}` : '';
-    const customLine =
-      mode === AppMode.CUSTOM && customTopicRef.current.trim()
-        ? `\nLESSON TOPIC (CLASSROOM — STRICT, DO NOT DIGRESS): ${customTopicRef.current.trim()}\nYou are the TEACHER for this lesson. Open by confirming the topic + asking ONE level/goal check, then loop: teach ONE micro-point → 2 examples → ONE drill task → detailed correction. Stay 100% on this topic.`
-        : '';
-    return (
-      SYSTEM_INSTRUCTION +
-      extra +
-      `\n\nCURRENT MODE: ${mode}\nMODE BEHAVIOR: ${modeSnippet}` +
-      scenarioLine +
-      customLine
-    );
-  };
+  const systemPrompt = (mode: AppMode) =>
+    buildSystemPrompt(configRef.current, mode, scenarioRef.current, customTopicRef.current);
 
   const contextMessages = (): ChatMessage[] =>
     transcriptionsRef.current
@@ -368,7 +375,9 @@ const App: React.FC = () => {
         try {
           addMistake({ ...parsed, mode: modeRef.current });
           mirrorMistake({ ...parsed, mode: modeRef.current });
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
     }
 
@@ -446,7 +455,9 @@ const App: React.FC = () => {
       messages,
       {
         onDelta: (delta) => {
-          setTranscriptions((prev) => prev.map((e) => (e.id === modelId ? { ...e, text: e.text + delta } : e)));
+          setTranscriptions((prev) =>
+            prev.map((e) => (e.id === modelId ? { ...e, text: e.text + delta } : e))
+          );
         },
         onAbort: () => {
           setTranscriptions((prev) => prev.filter((e) => e.id !== modelId));
@@ -455,7 +466,7 @@ const App: React.FC = () => {
           console.error('Chat error:', msg);
           setAnnounce(errorAnnounce);
           setTranscriptions((prev) =>
-            prev.map((e) => (e.id === modelId ? { ...e, text: `⚠️ ${msg}`, error: true } : e)),
+            prev.map((e) => (e.id === modelId ? { ...e, text: `⚠️ ${msg}`, error: true } : e))
           );
         },
         onDone: (full) => {
@@ -467,10 +478,10 @@ const App: React.FC = () => {
       },
       () => {
         abortRef.current = null;
-      },
+      }
     );
 
-  const processUserText = async (raw: string) => {
+  const processUserText = async (raw: string, opts?: { hidden?: boolean }) => {
     const text = (raw || '').trim();
     if (!text) return;
     if (!activeRef.current) return;
@@ -484,17 +495,32 @@ const App: React.FC = () => {
     setIsProcessing(true);
     stt.stopRecognition();
 
-    // real speech metrics for this user turn
+    // real speech metrics for this user turn — hidden kick turns skip metrics
     const elapsed = Math.max(1, (now() - (turnStartRef.current || now())) / 1000);
     const m = analyzeSpeech(text, Math.min(elapsed, 120));
-    wpmSamplesRef.current = [...wpmSamplesRef.current.slice(-19), m.wpm].filter((v) => v > 0);
-    const avg = wpmSamplesRef.current.length ? Math.round(wpmSamplesRef.current.reduce((a, b) => a + b, 0) / wpmSamplesRef.current.length) : m.wpm;
-    setAvgWpm(avg);
-    setFillerTotal((v) => v + m.fillerCount);
-    setUserTurns((v) => v + 1);
-    turnStartRef.current = now();
+    if (!opts?.hidden) {
+      wpmSamplesRef.current = [...wpmSamplesRef.current.slice(-19), m.wpm].filter((v) => v > 0);
+      const avg = wpmSamplesRef.current.length
+        ? Math.round(wpmSamplesRef.current.reduce((a, b) => a + b, 0) / wpmSamplesRef.current.length)
+        : m.wpm;
+      setAvgWpm(avg);
+      setFillerTotal((v) => v + m.fillerCount);
+      setUserTurns((v) => v + 1);
+      turnStartRef.current = now();
+    }
 
-    setTranscriptions((prev) => [...prev, { id: uid(), role: 'user', text, timestamp: now(), wpm: m.wpm, fillerCount: m.fillerCount }]);
+    setTranscriptions((prev) => [
+      ...prev,
+      {
+        id: uid(),
+        role: 'user',
+        text,
+        timestamp: now(),
+        wpm: m.wpm,
+        fillerCount: m.fillerCount,
+        hidden: opts?.hidden,
+      },
+    ]);
 
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt(modeRef.current) },
@@ -516,7 +542,7 @@ const App: React.FC = () => {
       void processUserText(queued);
       return;
     }
-    if (activeRef.current && modeRef.current !== AppMode.TRANSLATE && configRef.current.sttEngine === 'browser') {
+    if (activeRef.current && configRef.current.sttEngine === 'browser') {
       setTimeout(() => stt.resumeListening(), 300);
     }
   };
@@ -533,11 +559,26 @@ const App: React.FC = () => {
       const durationSec = Math.max(1, Math.round((endedAt - startedAt) / 1000));
       const corrections = list.filter((t) => t.text.includes('[Correction]')).length;
       const avg = avgSkill(assessment);
-      const xpGain = xpForSession(durationSec, userTurns, corrections);
+      // F9 — Daily Challenge: đúng mode + scenario + đủ lượt nói trong ngày chưa có completion.
+      const ch = dailyChallengeRef.current;
+      const completesChallenge =
+        !isDailyDone() &&
+        modeRef.current === ch.mode &&
+        scenarioRef.current === ch.scenarioId &&
+        userTurns >= ch.minTurns;
+      const xpGain =
+        xpForSession(durationSec, userTurns, corrections) + (completesChallenge ? ch.bonusXP : 0);
       const rec = {
-        id: uid(), mode: modeRef.current, startedAt, endedAt, durationSec,
-        turns: userTurns, corrections, avgScore: avg,
-        vocabPoints: assessment.vocabularyPoints, confidence: assessment.confidenceLevel,
+        id: uid(),
+        mode: modeRef.current,
+        startedAt,
+        endedAt,
+        durationSec,
+        turns: userTurns,
+        corrections,
+        avgScore: avg,
+        vocabPoints: assessment.vocabularyPoints,
+        confidence: assessment.confidenceLevel,
         transcript: list,
       };
       saveSession(rec);
@@ -545,6 +586,11 @@ const App: React.FC = () => {
       const { streak: s } = logSessionProgress(durationSec, xpGain);
       setStreak(s);
       setXp(totalXP());
+      if (completesChallenge) {
+        markDailyDone();
+        setDailyDone(true);
+        setAnnounce(`🎯 Daily Challenge hoàn thành! +${ch.bonusXP} XP bonus`);
+      }
       void mirrorProgress(durationSec, xpGain).then((rs) => {
         if (typeof rs === 'number') setStreak(rs);
       });
@@ -608,29 +654,41 @@ const App: React.FC = () => {
     stt.resetBuffer();
 
     // Safari/Firefox: no Web Speech -> auto-suggest custom STT instead of hard fail
-    if (mode !== AppMode.TRANSLATE && configRef.current.sttEngine === 'browser' && !isBrowserSTTSupported()) {
-      setStartError('Trình duyệt này không hỗ trợ Web Speech (Safari iOS / Firefox). Hãy chuyển STT sang Custom Provider trong Settings để dùng Hold-to-Speak, hoặc gõ text bên dưới.');
+    if (configRef.current.sttEngine === 'browser' && !isBrowserSTTSupported()) {
+      setStartError(
+        'Trình duyệt này không hỗ trợ Web Speech (Safari iOS / Firefox). Hãy chuyển STT sang Custom Provider trong Settings để dùng Hold-to-Speak, hoặc gõ text bên dưới.'
+      );
     }
 
     try {
-      if (mode !== AppMode.TRANSLATE && !(configRef.current.sttEngine === 'browser' && !isBrowserSTTSupported())) {
+      if (!(configRef.current.sttEngine === 'browser' && !isBrowserSTTSupported())) {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({
             audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
           });
           streamRef.current = stream;
         } catch (micErr) {
-          // Translate + text fallback still works without mic (mode already narrowed to non-translate here)
+          // Translate + text fallback still works without mic
           console.warn('Mic unavailable, continuing with text input', micErr);
-          setStartError('Không lấy được micro — bạn vẫn có thể gõ text để học. Kiểm tra quyền micro nếu muốn nói.');
+          setStartError(
+            'Không lấy được micro — bạn vẫn có thể gõ text để học. Kiểm tra quyền micro nếu muốn nói.'
+          );
         }
       }
       setSession({ isActive: true, mode, startTime: now() });
       activeRef.current = true;
       modeRef.current = mode;
 
-      if (mode !== AppMode.TRANSLATE && configRef.current.sttEngine === 'browser') {
+      if (configRef.current.sttEngine === 'browser') {
         stt.setupRecognition();
+      }
+
+      // Roleplay: auto-kick the scene — a hidden user turn tells the AI to open
+      // in character, so the session doesn't start with a blank chat.
+      if (mode === AppMode.ROLEPLAY) {
+        setTimeout(() => {
+          void processUserText(ROLEPLAY_KICK, { hidden: true });
+        }, 300);
       }
     } catch (err: unknown) {
       console.error('Failed to start session:', err);
@@ -638,7 +696,7 @@ const App: React.FC = () => {
       setStartError(
         e?.name === 'NotAllowedError' || e?.name === 'NotFoundError'
           ? 'Microphone access was denied or unavailable. Check browser permissions and try again.'
-          : `Failed to start: ${e?.message || String(err)}`,
+          : `Failed to start: ${e?.message || String(err)}`
       );
       activeRef.current = false;
     }
@@ -661,6 +719,31 @@ const App: React.FC = () => {
     }
   };
 
+  // F9 — nhảy thẳng vào thử thách hôm nay: đúng scenario + đúng mode.
+  const startDailyChallenge = () => {
+    const ch = dailyChallengeRef.current;
+    setScenarioId(ch.scenarioId);
+    scenarioRef.current = ch.scenarioId;
+    if (session.mode !== ch.mode) {
+      setSession((prev) => ({ ...prev, mode: ch.mode }));
+    }
+    void startSession(ch.mode);
+  };
+
+  // F11 — adaptive difficulty: áp gợi ý (không tự đổi) / bỏ qua lần này.
+  const applySuggestedDifficulty = (next: Difficulty) => {
+    const nextCfg = { ...configRef.current, difficulty: next };
+    setConfig(nextCfg);
+    saveConfig(nextCfg);
+    setDismissedSuggestion(next);
+    setDismissedState(next);
+    setAnnounce(`Đã chuyển difficulty sang ${next}`);
+  };
+  const dismissDifficultySuggestion = (suggestion: Difficulty) => {
+    setDismissedSuggestion(suggestion);
+    setDismissedState(suggestion);
+  };
+
   const sendTextMessage = (text: string) => {
     const t = text.trim();
     if (!t || !activeRef.current) return;
@@ -681,7 +764,10 @@ const App: React.FC = () => {
     const pendingSpeech = stt.pendingSpeech();
     stt.resetBuffer();
     if (pendingSpeech) {
-      setTranscriptions((prev) => [...prev, { id: uid(), role: 'user', text: pendingSpeech, timestamp: now() }]);
+      setTranscriptions((prev) => [
+        ...prev,
+        { id: uid(), role: 'user', text: pendingSpeech, timestamp: now() },
+      ]);
     }
     stt.stopRecognition();
     processingRef.current = true;
@@ -691,19 +777,7 @@ const App: React.FC = () => {
       { role: 'system', content: systemPrompt(modeRef.current) },
       ...contextMessages(),
       ...(pendingSpeech ? [{ role: 'user' as const, content: pendingSpeech }] : []),
-      {
-        role: 'user',
-        content:
-          modeRef.current === AppMode.MEETING
-            ? 'The meeting is over. Provide [Assessment], then summarise: 3 strengths, 2 things to improve (conciseness + professionalism), plus action-items list from our discussion. Say goodbye.'
-            : modeRef.current === AppMode.PRESENTATION
-              ? 'The presentation is over. Provide [Assessment], then report: structure score, pace (use WPM if observable), filler words, 1 signposting tip, plus ONE tough Q&A question to practice next. Say goodbye.'
-              : modeRef.current === AppMode.CUSTOM
-                ? 'The lesson is over. Provide [Assessment], then give a 3-question mini-quiz on the lesson topic for homework plus a 2-sentence recap. Say goodbye.'
-                : modeRef.current === AppMode.TRANSLATE
-                  ? 'Session over. Provide [Assessment], then list the 3 most useful natural phrasings we learned with 1-line nuance each. Say goodbye.'
-                  : 'The student has ended the session. Please provide a final assessment using the [Assessment] block, briefly summarize strengths and areas to improve, then say goodbye.',
-      },
+      { role: 'user', content: finishPrompt(modeRef.current) },
     ];
 
     const modelId = uid();
@@ -725,17 +799,24 @@ const App: React.FC = () => {
 
   const handleToggleTranslation = async (entry: TranscriptionEntry) => {
     if (entry.translation) {
-      setTranscriptions((prev) => prev.map((t) => (t.id === entry.id ? { ...t, translation: undefined } : t)));
+      setTranscriptions((prev) =>
+        prev.map((t) => (t.id === entry.id ? { ...t, translation: undefined } : t))
+      );
       return;
     }
     const result = await translatePhrase(configRef.current, entry.text);
     // null = network/API failure — announce (aria-live) thay vì im lặng tuyệt đối.
     if (!result) setAnnounce('Không dịch được câu này. Kiểm tra kết nối AI rồi thử lại.');
-    setTranscriptions((prev) => prev.map((t) => (t.id === entry.id ? { ...t, translation: result || undefined } : t)));
+    setTranscriptions((prev) =>
+      prev.map((t) => (t.id === entry.id ? { ...t, translation: result || undefined } : t))
+    );
   };
 
   const copyTranscript = () => {
-    const md = transcriptToMarkdown(transcriptionsRef.current.filter((t) => !t.error), modeRef.current);
+    const md = transcriptToMarkdown(
+      transcriptionsRef.current.filter((t) => !t.error),
+      modeRef.current
+    );
     navigator.clipboard?.writeText(md).catch(() => {});
     setCopiedAll(true);
     setTimeout(() => setCopiedAll(false), 1200);
@@ -744,7 +825,10 @@ const App: React.FC = () => {
   const saveTranscript = () =>
     downloadText(
       `fluentdev-${modeRef.current}-${now()}.md`,
-      transcriptToMarkdown(transcriptionsRef.current.filter((t) => !t.error), modeRef.current),
+      transcriptToMarkdown(
+        transcriptionsRef.current.filter((t) => !t.error),
+        modeRef.current
+      )
     );
 
   const toggleAutoListen = () => {
@@ -761,12 +845,19 @@ const App: React.FC = () => {
   // Early return SAU tất cả hooks — hook order ổn định giữa các render.
   if (!authChecked) {
     return (
-      <div className={`flex h-dvh items-center justify-center ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`} aria-busy="true" aria-label="Đang tải FluentDev">
+      <div
+        className={`flex h-dvh items-center justify-center ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}
+        aria-busy="true"
+        aria-label="Đang tải FluentDev"
+      >
         <div className="flex flex-col items-center gap-3">
           <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center" aria-hidden>
             <span className="text-white text-xl font-bold">F</span>
           </div>
-          <div className="w-6 h-6 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin" aria-hidden></div>
+          <div
+            className="w-6 h-6 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin"
+            aria-hidden
+          ></div>
         </div>
       </div>
     );
@@ -777,341 +868,443 @@ const App: React.FC = () => {
 
   return (
     <LazyMotion features={() => import('./utils/motionFeatures').then((mod) => mod.domAnimation)} strict>
-    <AIConfigProvider config={config}>
-      <div
-        className={`flex flex-col h-dvh overflow-hidden transition-colors ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} selection:bg-blue-600 selection:text-white`}
-      >
-        <Header
-          isDarkMode={isDarkMode}
-          toggleDarkMode={toggleDarkMode}
-          onOpenSettings={() => setShowSettings(true)}
-          onOpenLibrary={() => setShowLibrary(true)}
-          refreshSignal={libraryEpoch}
-          authUser={authUser}
-          onSignOut={handleSignOut}
-        />
-        <SelectionTranslator config={config} />
-        {!browserSTT && (
-          <div className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 text-amber-700 dark:text-amber-300 rounded-lg px-4 py-2.5" role="alert" lang="vi">
-            <TriangleAlert size={14} className="mt-0.5 shrink-0" />
-            <span>Trình duyệt này không hỗ trợ Web Speech (Safari/Firefox). Hãy chuyển STT → Custom Provider trong Settings để dùng nút Hold-to-Speak, hoặc gõ text phía dưới — app vẫn học bình thường.</span>
-          </div>
-        )}
-        {/* One-time proxy migration offer for legacy BYOK users. */}
-        {proxyNotice && (
-          <div className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 text-blue-700 dark:text-blue-300 rounded-lg px-4 py-2.5" role="status" lang="vi">
-            <ShieldCheck size={14} className="mt-0.5 shrink-0" />
-            <span className="flex-1">API key của bạn đang lưu plaintext trong browser. Chuyển sang server proxy — key nằm ở server env, không còn trong localStorage? (Direct BYOK vẫn giữ nguyên nếu từ chối.)</span>
-            <button
-              onClick={() => resolveProxyNotice(true)}
-              className="shrink-0 px-2.5 py-1 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+      <AIConfigProvider config={config}>
+        <div
+          className={`flex flex-col h-dvh overflow-hidden transition-colors ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} selection:bg-blue-600 selection:text-white`}
+        >
+          <Header
+            isDarkMode={isDarkMode}
+            toggleDarkMode={toggleDarkMode}
+            onOpenSettings={() => setShowSettings(true)}
+            onOpenLibrary={() => setShowLibrary(true)}
+            refreshSignal={libraryEpoch}
+            authUser={authUser}
+            onSignOut={handleSignOut}
+          />
+          <SelectionTranslator config={config} />
+          {!browserSTT && (
+            <div
+              className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 text-amber-700 dark:text-amber-300 rounded-lg px-4 py-2.5"
+              role="alert"
+              lang="vi"
             >
-              Chuyển
-            </button>
-            <button
-              onClick={() => resolveProxyNotice(false)}
-              className="shrink-0 p-0.5 -m-0.5 rounded text-blue-400 hover:text-blue-600 dark:hover:text-blue-200 transition-colors"
-              aria-label="Keep direct BYOK mode"
+              <TriangleAlert size={14} className="mt-0.5 shrink-0" />
+              <span>
+                Trình duyệt này không hỗ trợ Web Speech (Safari/Firefox). Hãy chuyển STT → Custom Provider
+                trong Settings để dùng nút Hold-to-Speak, hoặc gõ text phía dưới — app vẫn học bình thường.
+              </span>
+            </div>
+          )}
+          {/* One-time proxy migration offer for legacy BYOK users. */}
+          {proxyNotice && (
+            <div
+              className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 text-blue-700 dark:text-blue-300 rounded-lg px-4 py-2.5"
+              role="status"
+              lang="vi"
             >
-              <X size={14} />
-            </button>
-          </div>
-        )}
-        <div aria-live="polite" role="status" className="sr-only">{announce}</div>
-
-        {/* Mid-session errors (STT/mic failures) — StartScreen is hidden while
-            active, so without this banner the user would never see the error. */}
-        {session.isActive && startError && (
-          <div
-            className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 text-red-700 dark:text-red-300 rounded-lg px-4 py-2.5"
-            role="alert"
-            lang="vi"
-          >
-            <TriangleAlert size={14} className="mt-0.5 shrink-0" />
-            <span className="flex-1">{startError}</span>
-            <button
-              onClick={() => setStartError(null)}
-              className="shrink-0 p-0.5 -m-0.5 rounded text-red-400 hover:text-red-600 dark:hover:text-red-200 transition-colors"
-              aria-label="Dismiss error"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        )}
-
-        <main className="flex-1 flex flex-col md:flex-row max-w-[1600px] mx-auto w-full p-2 sm:p-4 md:p-6 gap-3 md:gap-6 h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)] min-h-0 overflow-hidden relative">
-          {/* Desktop Sidebar */}
-          <AnimatePresence>
-            {showSidebar && (
-              <m.nav
-                initial={{ width: 0, opacity: 0, x: -20 }}
-                animate={{ width: 280, opacity: 1, x: 0 }}
-                exit={{ width: 0, opacity: 0, x: -20 }}
-                className="hidden md:flex flex-col shrink-0 overflow-hidden bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800"
-                aria-label="Desktop practice modes"
+              <ShieldCheck size={14} className="mt-0.5 shrink-0" />
+              <span className="flex-1">
+                API key của bạn đang lưu plaintext trong browser. Chuyển sang server proxy — key nằm ở server
+                env, không còn trong localStorage? (Direct BYOK vẫn giữ nguyên nếu từ chối.)
+              </span>
+              <button
+                onClick={() => resolveProxyNotice(true)}
+                className="shrink-0 px-2.5 py-1 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors"
               >
-                <div className="w-[280px] flex flex-col h-full">
-                  <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 dark:border-slate-800">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Modes</span>
-                    <button
-                      onClick={() => setShowSidebar(false)}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
-                      aria-label="Collapse practice modes"
-                      title="Collapse practice modes"
-                    >
-                      <ChevronsLeft size={16} />
-                    </button>
-                  </div>
-                  <div className="flex-1 min-h-0 overflow-y-auto p-3">
-                    <Sidebar activeMode={session.mode} onChangeMode={changeMode} />
-                  </div>
-                </div>
-              </m.nav>
-            )}
-          </AnimatePresence>
+                Chuyển
+              </button>
+              <button
+                onClick={() => resolveProxyNotice(false)}
+                className="shrink-0 p-0.5 -m-0.5 rounded text-blue-400 hover:text-blue-600 dark:hover:text-blue-200 transition-colors"
+                aria-label="Keep direct BYOK mode"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+          <div aria-live="polite" role="status" className="sr-only">
+            {announce}
+          </div>
 
-          {/* Mobile Drawer */}
-          <AnimatePresence>
-            {isMobileSidebarOpen && (
-              <>
-                <m.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="fixed inset-0 bg-black/40 z-30 md:hidden"
-                  onClick={() => setIsMobileSidebarOpen(false)}
-                  aria-hidden="true"
-                />
+          {/* Mid-session errors (STT/mic failures) — StartScreen is hidden while
+            active, so without this banner the user would never see the error. */}
+          {session.isActive && startError && (
+            <div
+              className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 text-red-700 dark:text-red-300 rounded-lg px-4 py-2.5"
+              role="alert"
+              lang="vi"
+            >
+              <TriangleAlert size={14} className="mt-0.5 shrink-0" />
+              <span className="flex-1">{startError}</span>
+              <button
+                onClick={() => setStartError(null)}
+                className="shrink-0 p-0.5 -m-0.5 rounded text-red-400 hover:text-red-600 dark:hover:text-red-200 transition-colors"
+                aria-label="Dismiss error"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          <main className="flex-1 flex flex-col md:flex-row max-w-[1600px] mx-auto w-full p-2 sm:p-4 md:p-6 gap-3 md:gap-6 h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)] min-h-0 overflow-hidden relative">
+            {/* Desktop Sidebar */}
+            <AnimatePresence>
+              {showSidebar && (
                 <m.nav
-                  initial={{ x: -300, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  exit={{ x: -300, opacity: 0 }}
-                  className="fixed left-0 top-14 sm:top-16 bottom-0 w-[85vw] max-w-[300px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 z-40 md:hidden p-4 pb-[env(safe-area-inset-bottom)] overflow-y-auto"
-                  aria-label="Mobile practice modes"
+                  initial={{ width: 0, opacity: 0, x: -20 }}
+                  animate={{ width: 280, opacity: 1, x: 0 }}
+                  exit={{ width: 0, opacity: 0, x: -20 }}
+                  className="hidden md:flex flex-col shrink-0 overflow-hidden bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800"
+                  aria-label="Desktop practice modes"
                 >
-                  <div className="flex items-center justify-between mb-2 md:hidden">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Practice Modes</span>
+                  <div className="w-[280px] flex flex-col h-full">
+                    <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 dark:border-slate-800">
+                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                        Modes
+                      </span>
+                      <button
+                        onClick={() => setShowSidebar(false)}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                        aria-label="Collapse practice modes"
+                        title="Collapse practice modes"
+                      >
+                        <ChevronsLeft size={16} />
+                      </button>
+                    </div>
+                    <div className="flex-1 min-h-0 overflow-y-auto p-3">
+                      <Sidebar activeMode={session.mode} onChangeMode={changeMode} />
+                    </div>
+                  </div>
+                </m.nav>
+              )}
+            </AnimatePresence>
+
+            {/* Mobile Drawer */}
+            <AnimatePresence>
+              {isMobileSidebarOpen && (
+                <>
+                  <m.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 bg-black/40 z-30 md:hidden"
+                    onClick={() => setIsMobileSidebarOpen(false)}
+                    aria-hidden="true"
+                  />
+                  <m.nav
+                    initial={{ x: -300, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    exit={{ x: -300, opacity: 0 }}
+                    className="fixed left-0 top-14 sm:top-16 bottom-0 w-[85vw] max-w-[300px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 z-40 md:hidden p-4 pb-[env(safe-area-inset-bottom)] overflow-y-auto"
+                    aria-label="Mobile practice modes"
+                  >
+                    <div className="flex items-center justify-between mb-2 md:hidden">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                        Practice Modes
+                      </span>
+                      <button
+                        onClick={() => setIsMobileSidebarOpen(false)}
+                        className="p-2 -m-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                        aria-label="Close menu"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <Sidebar activeMode={session.mode} onChangeMode={changeMode} />
+                  </m.nav>
+                </>
+              )}
+            </AnimatePresence>
+
+            {/* Chat / Interaction Area */}
+            <section
+              className="flex-1 flex flex-col min-h-0 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden transition-colors min-w-0"
+              data-tour-id="chat-panel"
+            >
+              <div className="flex items-center gap-2 px-2 sm:px-3 py-2 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                <button
+                  onClick={() => {
+                    if (window.innerWidth < 768) setIsMobileSidebarOpen(true);
+                    else setShowSidebar(true);
+                  }}
+                  className={`h-9 flex items-center gap-1.5 px-2.5 rounded-lg border text-xs font-bold transition-all ${showSidebar || isMobileSidebarOpen ? 'invisible w-0 px-0 overflow-hidden border-transparent' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                  data-tour-id="modes-btn"
+                  aria-label="Show practice modes"
+                  title="Show practice modes"
+                  tabIndex={showSidebar || isMobileSidebarOpen ? -1 : 0}
+                >
+                  <PanelLeft size={16} />
+                  <span className="hidden sm:inline">Modes</span>
+                </button>
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${MODE_CONFIGS[session.mode].dot}`}
+                    aria-hidden
+                  />
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">
+                    {MODE_CONFIGS[session.mode].title}
+                  </span>
+                  <span className="hidden sm:inline text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">
+                    ·{' '}
+                    {MODE_CONFIGS[session.mode].scenarios?.find((s) => s.id === scenarioId)?.label ??
+                      MODE_CONFIGS[session.mode].tagline}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setShowAssessment(true)}
+                  className={`h-9 hidden lg:flex items-center gap-1.5 px-2.5 rounded-lg border text-xs font-bold transition-all ${showAssessment ? 'invisible w-0 px-0 overflow-hidden border-transparent' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                  aria-label="Show assessment"
+                  title="Show assessment panel"
+                  tabIndex={showAssessment ? -1 : 0}
+                >
+                  <PanelRight size={16} />
+                  <span className="hidden sm:inline">Assessment</span>
+                </button>
+              </div>
+              <div
+                ref={scrollRef}
+                onScroll={handleChatScroll}
+                className={`flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6 scroll-smooth ${showAssessment ? 'pb-40 lg:pb-6' : ''}`}
+              >
+                {!session.isActive && !isConnecting && (
+                  <StartScreen
+                    mode={session.mode}
+                    scenarioId={scenarioId}
+                    customTopic={customTopic}
+                    startError={startError}
+                    daily={{ challenge: dailyChallenge, done: dailyDone }}
+                    difficultyNudge={
+                      difficultySuggestion && difficultySuggestion !== dismissedSuggestion
+                        ? { current: config.difficulty ?? 'intermediate', suggested: difficultySuggestion }
+                        : null
+                    }
+                    onApplyDifficulty={applySuggestedDifficulty}
+                    onDismissNudge={dismissDifficultySuggestion}
+                    onStart={() => void startSession(session.mode)}
+                    onStartChallenge={startDailyChallenge}
+                    onScenario={(id) => {
+                      setScenarioId(id);
+                      scenarioRef.current = id;
+                    }}
+                    onTopic={(v) => {
+                      if (session.mode === AppMode.CUSTOM) setCustomTopic(v);
+                      else setInputText(v);
+                    }}
+                  />
+                )}
+
+                {isConnecting && (
+                  <div className="h-full flex flex-col items-center justify-center">
+                    <div className="relative">
+                      <div className="w-16 h-16 border-4 border-blue-200 dark:border-blue-900 border-t-blue-600 rounded-full animate-spin"></div>
+                      <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-blue-600">
+                        AI
+                      </span>
+                    </div>
+                    <p className="mt-4 text-slate-500 dark:text-slate-400 font-medium">
+                      Connecting to your coach...
+                    </p>
+                  </div>
+                )}
+
+                <ChatMessageList
+                  entries={transcriptions}
+                  mode={session.mode}
+                  coachLabel={MODE_CONFIGS[session.mode].coachRole}
+                  intro={
+                    transcriptions.length === 0 && session.isActive ? (
+                      <div
+                        className={`rounded-lg border px-4 py-3 text-xs ${MODE_CONFIGS[session.mode].accent}`}
+                        lang="vi"
+                      >
+                        <span className="font-bold">{MODE_CONFIGS[session.mode].coachRole}: </span>
+                        {MODE_CONFIGS[session.mode].scenarios?.find((s) => s.id === scenarioId)?.setup ??
+                          MODE_CONFIGS[session.mode].description}
+                        {session.mode === AppMode.CUSTOM && customTopic ? ` · Topic: ${customTopic}` : ''}
+                      </div>
+                    ) : undefined
+                  }
+                  onToggleTranslation={(entry) => void handleToggleTranslation(entry)}
+                />
+              </div>
+
+              <ControlBar
+                mode={session.mode}
+                active={session.isActive}
+                audio={{
+                  speaking: isSpeaking,
+                  processing: isProcessing,
+                  listening: stt.isListening,
+                  recording: stt.isRecording,
+                }}
+                autoListen={autoListen}
+                engine={config.sttEngine}
+                hasReplayable={canReplay}
+                inputText={inputText}
+                setInputText={setInputText}
+                showPhrases={showPhrases}
+                setShowPhrases={setShowPhrases}
+                copiedAll={copiedAll}
+                onSend={() => sendTextMessage(inputText)}
+                onStopSession={() => stopSession(true)}
+                onStopSpeaking={stopSpeaking}
+                onReplay={replayLast}
+                onCopyTranscript={copyTranscript}
+                onSaveTranscript={saveTranscript}
+                onFinish={() => void finishAndAssess()}
+                onStartingSession={() => void startSession(session.mode)}
+                onToggleAutoListen={toggleAutoListen}
+                onStartRecognition={() => stt.startRecognition()}
+                onHoldStart={stt.startRecording}
+                onHoldEnd={stt.stopRecording}
+              />
+            </section>
+
+            {/* Assessment Panel (Right Side) - Desktop */}
+            <AnimatePresence>
+              {showAssessment && (
+                <m.aside
+                  initial={{ width: 0, opacity: 0, x: 20 }}
+                  animate={{ width: 420, opacity: 1, x: 0 }}
+                  exit={{ width: 0, opacity: 0, x: 20 }}
+                  className="hidden lg:flex flex-col shrink-0 overflow-hidden bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800"
+                  data-tour-id="assessment-panel"
+                  aria-label="Assessment panel"
+                >
+                  <div className="w-[420px] flex flex-col h-full">
+                    <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 dark:border-slate-800">
+                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                        Assessment
+                      </span>
+                      <button
+                        onClick={() => setShowAssessment(false)}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                        aria-label="Collapse assessment panel"
+                        title="Collapse assessment panel"
+                      >
+                        <ChevronsRight size={16} />
+                      </button>
+                    </div>
+                    <div className="flex-1 min-h-0 overflow-y-auto p-3">
+                      <AssessmentPanel
+                        assessment={assessment}
+                        hasData={hasAssessmentData}
+                        duration={duration}
+                        avgWpm={avgWpm}
+                        fillerTotal={fillerTotal}
+                        turns={userTurns}
+                        streak={streak}
+                        xp={xp}
+                        mode={session.mode}
+                      />
+                    </div>
+                  </div>
+                </m.aside>
+              )}
+            </AnimatePresence>
+          </main>
+
+          {/* Mobile Assessment Drawer — collapsible bottom sheet */}
+          <AnimatePresence>
+            {showAssessment && (
+              <m.div
+                initial={{ y: 300, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 300, opacity: 0 }}
+                transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+                className="lg:hidden fixed bottom-0 left-0 right-0 max-h-[55dvh] overflow-y-auto overscroll-contain bg-white dark:bg-slate-900/85 dark:backdrop-blur-xl border-t border-slate-200 dark:border-slate-800 rounded-t-3xl shadow-2xl z-20 px-3 pt-2 pb-[env(safe-area-inset-bottom)]"
+                aria-label="Mobile assessment"
+              >
+                <div className="sticky top-0 bg-white dark:bg-slate-900/85 dark:backdrop-blur-xl pt-1 pb-2 z-10">
+                  <div
+                    className="mx-auto w-10 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 mb-1"
+                    aria-hidden
+                  />
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                      📊 Assessment
+                    </span>
                     <button
-                      onClick={() => setIsMobileSidebarOpen(false)}
-                      className="p-2 -m-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                      aria-label="Close menu"
+                      onClick={() => setShowAssessment(false)}
+                      className="p-2 -m-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                      aria-label="Hide assessment"
                     >
                       <X className="w-5 h-5" />
                     </button>
                   </div>
-                  <Sidebar activeMode={session.mode} onChangeMode={changeMode} />
-                </m.nav>
-              </>
+                </div>
+                <div className="px-1 pb-4">
+                  <AssessmentPanel
+                    assessment={assessment}
+                    hasData={hasAssessmentData}
+                    duration={duration}
+                    avgWpm={avgWpm}
+                    fillerTotal={fillerTotal}
+                    turns={userTurns}
+                    streak={streak}
+                    xp={xp}
+                    mode={session.mode}
+                  />
+                </div>
+              </m.div>
             )}
           </AnimatePresence>
 
-          {/* Chat / Interaction Area */}
-          <section className="flex-1 flex flex-col min-h-0 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden transition-colors min-w-0" data-tour-id="chat-panel">
-            <div className="flex items-center gap-2 px-2 sm:px-3 py-2 border-b border-slate-100 dark:border-slate-800 shrink-0">
-              <button
-                onClick={() => {
-                  if (window.innerWidth < 768) setIsMobileSidebarOpen(true);
-                  else setShowSidebar(true);
-                }}
-                className={`h-9 flex items-center gap-1.5 px-2.5 rounded-lg border text-xs font-bold transition-all ${(showSidebar || isMobileSidebarOpen) ? 'invisible w-0 px-0 overflow-hidden border-transparent' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                data-tour-id="modes-btn"
-                aria-label="Show practice modes"
-                title="Show practice modes"
-                tabIndex={(showSidebar || isMobileSidebarOpen) ? -1 : 0}
-              >
-                <PanelLeft size={16} />
-                <span className="hidden sm:inline">Modes</span>
-              </button>
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <span className={`w-2 h-2 rounded-full shrink-0 ${MODE_CONFIGS[session.mode].dot}`} aria-hidden />
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{MODE_CONFIGS[session.mode].title}</span>
-                <span className="hidden sm:inline text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">· {MODE_CONFIGS[session.mode].scenarios?.find((s) => s.id === scenarioId)?.label ?? MODE_CONFIGS[session.mode].tagline}</span>
-              </div>
-              <button
-                onClick={() => setShowAssessment(true)}
-                className={`h-9 hidden lg:flex items-center gap-1.5 px-2.5 rounded-lg border text-xs font-bold transition-all ${showAssessment ? 'invisible w-0 px-0 overflow-hidden border-transparent' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                aria-label="Show assessment"
-                title="Show assessment panel"
-                tabIndex={showAssessment ? -1 : 0}
-              >
-                <PanelRight size={16} />
-                <span className="hidden sm:inline">Assessment</span>
-              </button>
-            </div>
-            <div ref={scrollRef} onScroll={handleChatScroll} className={`flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6 scroll-smooth ${showAssessment ? 'pb-40 lg:pb-6' : ''}`}>
-              {!session.isActive && !isConnecting && (
-                <StartScreen
-                  mode={session.mode}
-                  scenarioId={scenarioId}
-                  customTopic={customTopic}
-                  startError={startError}
-                  onStart={() => void startSession(session.mode)}
-                  onScenario={(id) => { setScenarioId(id); scenarioRef.current = id; }}
-                  onTopic={(v) => {
-                    if (session.mode === AppMode.CUSTOM) setCustomTopic(v);
-                    else setInputText(v);
-                  }}
-                />
-              )}
-
-              {isConnecting && (
-                <div className="h-full flex flex-col items-center justify-center">
-                  <div className="relative">
-                    <div className="w-16 h-16 border-4 border-blue-200 dark:border-blue-900 border-t-blue-600 rounded-full animate-spin"></div>
-                    <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-blue-600">AI</span>
-                  </div>
-                  <p className="mt-4 text-slate-500 dark:text-slate-400 font-medium">Connecting to your coach...</p>
-                </div>
-              )}
-
-              <ChatMessageList
-                entries={transcriptions}
-                mode={session.mode}
-                coachLabel={MODE_CONFIGS[session.mode].coachRole}
-                intro={
-                  transcriptions.length === 0 && session.isActive ? (
-                    <div className={`rounded-lg border px-4 py-3 text-xs ${MODE_CONFIGS[session.mode].accent}`} lang="vi">
-                      <span className="font-bold">{MODE_CONFIGS[session.mode].coachRole}: </span>
-                      {MODE_CONFIGS[session.mode].scenarios?.find((s) => s.id === scenarioId)?.setup ?? MODE_CONFIGS[session.mode].description}
-                      {session.mode === AppMode.CUSTOM && customTopic ? ` · Topic: ${customTopic}` : ''}
-                    </div>
-                  ) : undefined
-                }
-                onToggleTranslation={(entry) => void handleToggleTranslation(entry)}
-              />
-            </div>
-
-            <ControlBar
-              mode={session.mode}
-              active={session.isActive}
-              audio={{
-                speaking: isSpeaking,
-                processing: isProcessing,
-                listening: stt.isListening,
-                recording: stt.isRecording,
-              }}
-              autoListen={autoListen}
-              engine={config.sttEngine}
-              hasReplayable={canReplay}
-              inputText={inputText}
-              setInputText={setInputText}
-              showPhrases={showPhrases}
-              setShowPhrases={setShowPhrases}
-              copiedAll={copiedAll}
-              onSend={() => sendTextMessage(inputText)}
-              onStopSession={() => stopSession(true)}
-              onStopSpeaking={stopSpeaking}
-              onReplay={replayLast}
-              onCopyTranscript={copyTranscript}
-              onSaveTranscript={saveTranscript}
-              onFinish={() => void finishAndAssess()}
-              onStartingSession={() => void startSession(session.mode)}
-              onToggleAutoListen={toggleAutoListen}
-              onStartRecognition={() => stt.startRecognition()}
-              onHoldStart={stt.startRecording}
-              onHoldEnd={stt.stopRecording}
-            />
-          </section>
-
-          {/* Assessment Panel (Right Side) - Desktop */}
-          <AnimatePresence>
-            {showAssessment && (
-              <m.aside
-                initial={{ width: 0, opacity: 0, x: 20 }}
-                animate={{ width: 420, opacity: 1, x: 0 }}
-                exit={{ width: 0, opacity: 0, x: 20 }}
-                className="hidden lg:flex flex-col shrink-0 overflow-hidden bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800"
-                data-tour-id="assessment-panel"
-                aria-label="Assessment panel"
-              >
-                <div className="w-[420px] flex flex-col h-full">
-                  <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 dark:border-slate-800">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Assessment</span>
-                    <button
-                      onClick={() => setShowAssessment(false)}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
-                      aria-label="Collapse assessment panel"
-                      title="Collapse assessment panel"
-                    >
-                      <ChevronsRight size={16} />
-                    </button>
-                  </div>
-                  <div className="flex-1 min-h-0 overflow-y-auto p-3">
-                    <AssessmentPanel assessment={assessment} hasData={hasAssessmentData} duration={duration} avgWpm={avgWpm} fillerTotal={fillerTotal} turns={userTurns} streak={streak} xp={xp} mode={session.mode} />
-                  </div>
-                </div>
-              </m.aside>
-            )}
-          </AnimatePresence>
-        </main>
-
-        {/* Mobile Assessment Drawer — collapsible bottom sheet */}
-        <AnimatePresence>
-          {showAssessment && (
-            <m.div
-              initial={{ y: 300, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 300, opacity: 0 }}
-              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="lg:hidden fixed bottom-0 left-0 right-0 max-h-[55dvh] overflow-y-auto overscroll-contain bg-white dark:bg-slate-900/85 dark:backdrop-blur-xl border-t border-slate-200 dark:border-slate-800 rounded-t-3xl shadow-2xl z-20 px-3 pt-2 pb-[env(safe-area-inset-bottom)]"
-              aria-label="Mobile assessment"
+          {/* Floating stats button on mobile when sheet hidden */}
+          {!showAssessment && (
+            <button
+              onClick={() => setShowAssessment(true)}
+              className="lg:hidden fixed bottom-24 right-3 z-20 flex items-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold shadow-xl active:scale-95 transition-transform"
+              aria-label="Show assessment"
             >
-              <div className="sticky top-0 bg-white dark:bg-slate-900/85 dark:backdrop-blur-xl pt-1 pb-2 z-10">
-                <div className="mx-auto w-10 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 mb-1" aria-hidden />
-                <div className="flex items-center justify-between px-1">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">📊 Assessment</span>
-                  <button
-                    onClick={() => setShowAssessment(false)}
-                    className="p-2 -m-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 min-w-[44px] min-h-[44px] flex items-center justify-center"
-                    aria-label="Hide assessment"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-              <div className="px-1 pb-4">
-                <AssessmentPanel assessment={assessment} hasData={hasAssessmentData} duration={duration} avgWpm={avgWpm} fillerTotal={fillerTotal} turns={userTurns} streak={streak} xp={xp} mode={session.mode} />
-              </div>
-            </m.div>
+              📊 Stats
+            </button>
           )}
-        </AnimatePresence>
 
-        {/* Floating stats button on mobile when sheet hidden */}
-        {!showAssessment && (
-          <button
-            onClick={() => setShowAssessment(true)}
-            className="lg:hidden fixed bottom-24 right-3 z-20 flex items-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold shadow-xl active:scale-95 transition-transform"
-            aria-label="Show assessment"
-          >
-            📊 Stats
-          </button>
-        )}
+          {showSettings && (
+            <Suspense fallback={null}>
+              <SettingsModal
+                initial={config}
+                onClose={() => setShowSettings(false)}
+                onSaved={(cfg) => setConfig(cfg)}
+                onReplayTour={() => {
+                  setShowSettings(false);
+                  setShowTour(true);
+                }}
+              />
+            </Suspense>
+          )}
+          {showLibrary && (
+            <Suspense fallback={null}>
+              <LibraryPanel
+                config={config}
+                onClose={() => {
+                  setShowLibrary(false);
+                  setStreak(getStreak());
+                  setXp(totalXP());
+                  setLibraryEpoch((v) => v + 1);
+                }}
+                onPractice={(mode, prefill) => {
+                  setShowLibrary(false);
+                  if (mode === AppMode.CUSTOM) setCustomTopic(prefill);
+                  if (mode === AppMode.DAILY) setInputText(prefill);
+                  if (session.mode !== mode) {
+                    const def = MODE_CONFIGS[mode]?.scenarios?.[0]?.id;
+                    if (def) {
+                      setScenarioId(def);
+                      scenarioRef.current = def;
+                    }
+                    setSession((prev) => ({ ...prev, mode }));
+                  }
+                }}
+              />
+            </Suspense>
+          )}
 
-        {showSettings && (
-          <Suspense fallback={null}>
-            <SettingsModal
-              initial={config}
-              onClose={() => setShowSettings(false)}
-              onSaved={(cfg) => setConfig(cfg)}
-              onReplayTour={() => { setShowSettings(false); setShowTour(true); }}
-            />
-          </Suspense>
-        )}
-        {showLibrary && <Suspense fallback={null}><LibraryPanel config={config} onClose={() => { setShowLibrary(false); setStreak(getStreak()); setXp(totalXP()); setLibraryEpoch((v) => v + 1); }} onPractice={(mode, prefill) => {
-          setShowLibrary(false);
-          if (mode === AppMode.CUSTOM) setCustomTopic(prefill);
-          if (mode === AppMode.DAILY) setInputText(prefill);
-          if (session.mode !== mode) {
-            const def = MODE_CONFIGS[mode]?.scenarios?.[0]?.id;
-            if (def) { setScenarioId(def); scenarioRef.current = def; }
-            setSession((prev) => ({ ...prev, mode }));
-          }
-        }} /></Suspense>}
-
-        {/* F2: first-run onboarding tour — replayable from Settings → Advanced. */}
-        {showTour && <Onboarding onDone={() => setShowTour(false)} />}
-      </div>
-    </AIConfigProvider>
+          {/* F2: first-run onboarding tour — replayable from Settings → Advanced. */}
+          {showTour && <Onboarding onDone={() => setShowTour(false)} />}
+        </div>
+      </AIConfigProvider>
     </LazyMotion>
   );
 };
