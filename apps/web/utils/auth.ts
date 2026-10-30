@@ -68,7 +68,7 @@ async function authRequest(path: string, body: unknown): Promise<AuthResult> {
     saveUser(j.user);
     return { ok: true, user: j.user };
   } catch {
-    return { ok: false, error: 'Không kết nối được Library server — kiểm tra `npm run dev:server`.' };
+    return { ok: false, error: 'Không kết nối được Library server — chạy `npm run dev` (chạy cả server + web).' };
   }
 }
 
