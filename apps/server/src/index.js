@@ -164,6 +164,10 @@ const ALLOWED_ORIGINS = (process.env.LIBRARY_ORIGIN || 'http://localhost:8240,ht
   .filter(Boolean);
 app.use(
   cors({
+    // httpOnly cookie fd_session (auth) — web/server khác port nên fetch dùng
+    // credentials: 'include'; thiếu flag này browser chặn CẢ preflight lẫn
+    // response với lỗi network im lặng ("Không kết nối được Library server").
+    credentials: true,
     origin(origin, cb) {
       // cb(null, false) = không set CORS headers → browser tự chặn request.
       // (throw ở đây sẽ thành 500 JSON — header không được thêm khi đó.)
@@ -229,20 +233,9 @@ app.post(/^\/api\/ai\/(chat\/completions|audio\/transcriptions|audio\/speech)$/,
   }
 });
 
-app.use(
-  cors({
-    credentials: true, // httpOnly cookie fd_session (auth) — web/server khác port
-    origin(origin, cb) {
-      // cb(null, false) = không set CORS headers → browser tự chặn request.
-      // (throw ở đây sẽ thành 500 JSON — header không được thêm khi đó.)
-      if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-      return cb(null, false);
-    },
-  }),
-);
+// ---------- Auth: req.user từ fd_session cookie (null = anonymous) ----------
 app.use(express.json({ limit: '5mb' }));
 
-// ---------- Auth: req.user từ fd_session cookie (null = anonymous) ----------
 app.use((req, _res, next) => {
   req.user = null;
   const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
