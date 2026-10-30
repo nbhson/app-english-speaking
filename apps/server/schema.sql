@@ -13,7 +13,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   vocab_points INTEGER NOT NULL DEFAULT 0,
   confidence INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+-- Lưu ý: index idx_sessions_user / idx_tasks_user được tạo trong index.js
+-- SAU migration user_id — trên DB legacy, CREATE INDEX tại đây sẽ lỗi
+-- "no such column: user_id" vì bảng cũ chưa có cột này.
 
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
@@ -72,7 +74,6 @@ CREATE TABLE IF NOT EXISTS tasks (
   completed_at INTEGER,
   created_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
 
 -- ---------- Auth (đơn giản: username + password, scrypt, cookie session) ----------
 CREATE TABLE IF NOT EXISTS users (
