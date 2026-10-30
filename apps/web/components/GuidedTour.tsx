@@ -99,20 +99,11 @@ const STEPS: TourStep[] = [
     },
   },
   {
-    element: 'library-btn',
+    element: 'auth-chip',
     popover: {
-      title: 'Library — trí nhớ của bạn 📚',
+      title: 'Library & Settings — trong menu tài khoản 👤',
       description:
-        'Mỗi [Correction] của Coach thành <strong>thẻ ôn lỗi SRS</strong>, mỗi từ bạn hover-lưu thành <strong>vocab</strong>. Có tìm kiếm, xuất Anki/JSON, weekly goal + Progress. Badge vàng = số thẻ đến hạn ôn.',
-      side: 'bottom',
-    },
-  },
-  {
-    element: 'settings-btn',
-    popover: {
-      title: 'Settings',
-      description:
-        'Kết nối <strong>Chat Model / STT / TTS</strong> (BYOK hoặc server proxy), chọn persona Coach và trình độ. Tour này có thể chạy lại ở Settings → Advanced.',
+        'Bấm avatar để mở menu tài khoản: <strong>My Library</strong> (mỗi [Correction] thành thẻ ôn lỗi SRS, từ hover-lưu thành vocab, có tìm kiếm + xuất Anki/JSON — badge/chấm vàng = thẻ đến hạn) và <strong>Settings</strong> (Chat Model / STT / TTS, persona). Đăng xuất cũng ở đây.',
       side: 'bottom',
     },
   },

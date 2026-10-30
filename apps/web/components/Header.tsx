@@ -38,7 +38,8 @@ export const Header: React.FC<Props> = ({
   const [libraryOnline, setLibraryOnline] = useState<boolean | null>(null);
   // F6: SRS due badge — tổng mistakes/vocab đến hạn ôn (đếm 30s/lần + khi Library đóng).
   const [due, setDue] = useState(0);
-  // Account dropdown: đăng xuất nằm trong menu (tránh bấm nhầm cạnh nút điều hướng).
+  // Account dropdown: Library/Settings/Đăng xuất đều nằm trong menu — một điểm
+  // truy cập duy nhất; chip ngoài giữ chấm amber khi có thẻ đến hạn ôn.
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const menuBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -113,33 +114,6 @@ export const Header: React.FC<Props> = ({
     </div>
 
     <div className="flex items-center gap-2 shrink-0">
-      {/* --- Nhóm 1: hành động (Library / Settings / Theme) --- */}
-      <button
-        onClick={onOpenLibrary}
-        className={`${iconBtnIdle} relative`}
-        data-tour-id="library-btn"
-        aria-label={due > 0 ? `Open learning library — ${due} cards due for review` : 'Open learning library'}
-        title={due > 0 ? `My Library — 🐞🔖 ${due} thẻ đến hạn ôn (SRS)` : 'My Library (history, mistakes, vocab, tasks)'}
-      >
-        <Library size={18} />
-        {due > 0 && (
-          <span
-            className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-bold shadow"
-            aria-hidden
-          >
-            {due > 99 ? '99+' : due}
-          </span>
-        )}
-      </button>
-      <button
-        onClick={onOpenSettings}
-        className={iconBtnIdle}
-        data-tour-id="settings-btn"
-        aria-label="Open AI Connection Settings"
-        title="AI Connection Settings"
-      >
-        <Settings size={18} />
-      </button>
       <button
         onClick={toggleDarkMode}
         className={iconBtnIdle}
@@ -152,7 +126,7 @@ export const Header: React.FC<Props> = ({
 
       <div className="hidden md:block w-px h-6 bg-slate-200 dark:bg-slate-700" aria-hidden />
 
-      {/* --- Nhóm 2: trạng thái sync (thông tin, không bấm được) --- */}
+      {/* Trạng thái sync (thông tin, không bấm được) */}
       {libraryOnline !== null && (
         <div
           className={`hidden md:flex items-center gap-1.5 px-3 h-10 rounded-lg border ${
@@ -171,12 +145,12 @@ export const Header: React.FC<Props> = ({
 
       <div className="hidden md:block w-px h-6 bg-slate-200 dark:bg-slate-700" aria-hidden />
 
-      {/* --- Nhóm 3: danh tính (cùng cực phải theo chuẩn Google/GitHub) --- */}
+      {/* Danh tính — Library/Settings/Đăng xuất nằm trong menu */}
       <div className="relative" ref={menuRef}>
         <button
           ref={menuBtnRef}
           onClick={toggleMenu}
-          className={`flex items-center gap-2 h-10 pl-1.5 pr-2 rounded-lg border transition-all active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-blue-500/60 outline-none ${
+          className={`relative flex items-center gap-2 h-10 pl-1.5 pr-2 rounded-lg border transition-all active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-blue-500/60 outline-none ${
             menuOpen
               ? 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600'
               : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -184,11 +158,15 @@ export const Header: React.FC<Props> = ({
           data-tour-id="auth-chip"
           aria-haspopup="menu"
           aria-expanded={menuOpen}
-          aria-label={`Tài khoản ${authUser.username} — mở menu`}
+          aria-label={`Tài khoản ${authUser.username} — mở menu (Library, Settings, Đăng xuất)`}
           title={`Tài khoản: ${authUser.username}`}
         >
-          <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold uppercase" aria-hidden>
-            {authUser.username.slice(0, 1)}
+          <div className="relative">
+            <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold uppercase" aria-hidden>
+              {authUser.username.slice(0, 1)}
+            </div>
+            {/* Chấm amber: có thẻ đến hạn ôn — nhắc user mở Library */}
+            {due > 0 && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-white dark:ring-slate-800" aria-hidden />}
           </div>
           <span className="hidden sm:block text-xs font-bold text-slate-700 dark:text-slate-200 max-w-[110px] truncate">
             {authUser.username}
@@ -214,10 +192,33 @@ export const Header: React.FC<Props> = ({
               </div>
             </div>
             <div className="p-1.5">
+              {onOpenLibrary && (
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); onOpenLibrary(); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left"
+                >
+                  <Library size={15} className="text-slate-400 shrink-0" aria-hidden />
+                  <span className="flex-1">My Library</span>
+                  {due > 0 && (
+                    <span className="min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-bold" aria-label={`${due} thẻ đến hạn ôn`}>
+                      {due > 99 ? '99+' : due}
+                    </span>
+                  )}
+                </button>
+              )}
+              <button
+                role="menuitem"
+                onClick={() => { setMenuOpen(false); onOpenSettings(); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left"
+              >
+                <Settings size={15} className="text-slate-400 shrink-0" aria-hidden /> Settings
+              </button>
+              <div className="my-1 h-px bg-slate-100 dark:bg-slate-800" aria-hidden />
               {/* Trạng thái sync — hữu ích cho mobile (pill ngoài header bị ẩn < md) */}
               {libraryOnline !== null && (
                 <div
-                  className={`flex md:hidden items-center gap-2 px-3 py-2 text-[11px] font-bold uppercase tracking-wider rounded-xl ${
+                  className={`flex md:hidden items-center gap-2 px-3 py-2 text-[11px] font-bold uppercase tracking-wider ${
                     libraryOnline ? 'text-green-700 dark:text-green-300' : 'text-slate-400'
                   }`}
                 >
@@ -225,7 +226,6 @@ export const Header: React.FC<Props> = ({
                   {libraryOnline ? 'Library Sync' : 'Local Only'}
                 </div>
               )}
-              <div className="h-px bg-slate-100 dark:bg-slate-800 md:hidden" aria-hidden />
               <button
                 role="menuitem"
                 onClick={() => { setMenuOpen(false); onSignOut(); }}
