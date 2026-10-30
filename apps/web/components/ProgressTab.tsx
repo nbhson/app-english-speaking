@@ -10,7 +10,7 @@ import {
 import { cardCls, btnGhost } from '../utils/ui';
 
 const StatTile: React.FC<{ value: React.ReactNode; label: string; title?: string }> = ({ value, label, title }) => (
-  <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-4 text-center min-w-0" title={title}>
+  <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 text-center min-w-0" title={title}>
     <div className="text-2xl font-bold dark:text-white truncate">{value}</div>
     <div className="text-[11px] font-bold text-slate-400 uppercase">{label}</div>
   </div>

@@ -84,7 +84,7 @@ export const SelectionTranslator: React.FC<Props> = ({ config }) => {
           initial={{ opacity: 0, scale: 0.9, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 10 }}
-          className="bg-slate-900/95 backdrop-blur-md text-white rounded-2xl shadow-2xl p-4 min-w-[200px] max-w-[calc(100vw-3rem)] sm:max-w-xs border border-white/10"
+          className="bg-slate-900/95 backdrop-blur-md text-white rounded-lg shadow-2xl p-4 min-w-[200px] max-w-[calc(100vw-3rem)] sm:max-w-xs border border-white/10"
         >
           {!translation && !loading ? (
             <button

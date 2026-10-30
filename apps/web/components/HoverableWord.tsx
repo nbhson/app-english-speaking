@@ -135,7 +135,7 @@ export const HoverableWord: React.FC<Props> = ({ word, config }) => {
           className="absolute bottom-full mb-2 z-50 w-56 max-w-[70vw] animate-in fade-in zoom-in duration-200"
           style={{ left: '50%', transform: `translateX(calc(-50% + ${tooltipShift}px))` }}
         >
-          <span className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-2xl rounded-2xl p-4 text-slate-800 dark:text-slate-200 text-xs block">
+          <span className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-2xl rounded-lg p-4 text-slate-800 dark:text-slate-200 text-xs block">
             {loading ? (
               <span className="flex items-center space-x-2 py-1">
                 <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></span>

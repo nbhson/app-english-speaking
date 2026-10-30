@@ -85,7 +85,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
               )}
             </div>
           )}
-          <div className="flex items-center gap-1.5 sm:gap-2 bg-white dark:bg-slate-800 p-1.5 sm:p-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+          <div className="flex items-center gap-1.5 sm:gap-2 bg-white dark:bg-slate-800 p-1.5 sm:p-2 rounded-lg border border-slate-200 dark:border-slate-700">
             <label htmlFor="chat-input" className="sr-only">
               Type your message
             </label>
@@ -107,14 +107,14 @@ export const ControlBar: React.FC<ControlBarProps> = ({
             <button
               onClick={onSend}
               disabled={!inputText.trim()}
-              className="p-2.5 sm:p-2 shrink-0 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="p-2.5 sm:p-2 shrink-0 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               aria-label="Send message"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
             <button
               onClick={() => onStopSession()}
-              className="p-2.5 sm:p-2 shrink-0 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/40 hover:text-red-500 transition-colors"
+              className="p-2.5 sm:p-2 shrink-0 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 rounded-md hover:bg-red-100 dark:hover:bg-red-900/40 hover:text-red-500 transition-colors"
               title="Stop Session (auto-saves)"
               aria-label="Stop session"
             >
@@ -126,7 +126,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
             {audio.speaking ? (
               <button
                 onClick={onStopSpeaking}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 shrink-0 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-xl text-xs font-bold hover:bg-amber-200 transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 shrink-0 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-lg text-xs font-bold hover:bg-amber-200 transition-colors"
                 title="Interrupt coach (stop speaking)"
                 aria-label="Interrupt coach"
               >
@@ -136,7 +136,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
               <button
                 onClick={onReplay}
                 disabled={!hasReplayable}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-100 transition-colors disabled:opacity-40"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 rounded-lg text-xs font-bold hover:bg-slate-100 transition-colors disabled:opacity-40"
                 title="Replay last coach reply"
                 aria-label="Replay last reply"
               >
@@ -145,7 +145,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
             )}
             <button
               onClick={onCopyTranscript}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-100 transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 rounded-lg text-xs font-bold hover:bg-slate-100 transition-colors"
               title="Copy transcript"
               aria-label="Copy transcript"
             >
@@ -153,7 +153,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
             </button>
             <button
               onClick={onSaveTranscript}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-100 transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 rounded-lg text-xs font-bold hover:bg-slate-100 transition-colors"
               title="Download transcript (.md)"
               aria-label="Download transcript"
             >
@@ -190,13 +190,14 @@ export const ControlBar: React.FC<ControlBarProps> = ({
             {engine === 'browser' && (
               <button
                 onClick={onToggleAutoListen}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
                   autoListen
                     ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800/30 text-blue-600 dark:text-blue-400'
                     : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500'
                 }`}
                 aria-pressed={autoListen}
                 aria-label={autoListen ? 'Auto-listen enabled' : 'Auto-listen disabled'}
+                data-tour-id="auto-listen-btn"
                 title={autoListen ? 'Auto-listen ON — talk freely after each reply' : 'Auto-listen OFF — tap Continue after reading the coach reply'}
               >
                 <span className={`relative inline-block w-9 h-5 rounded-full transition-colors ${autoListen ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
@@ -209,7 +210,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
 
           <div className="flex items-center gap-2 flex-wrap gap-y-2">
             {active && engine === 'browser' && audio.listening && !audio.processing && !audio.speaking && (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
                 <div className="flex gap-0.5" aria-hidden>
                   {[1, 2, 3, 4].map((i) => (
                     <div key={i} className="w-1 h-3 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: `${i * 0.1}s` }}></div>
@@ -222,7 +223,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
             {active && engine === 'browser' && !autoListen && !audio.listening && !audio.processing && !audio.speaking && (
               <button
                 onClick={onStartRecognition}
-                className="flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 rounded-xl font-bold text-sm bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-all animate-in fade-in"
+                className="flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 rounded-lg font-bold text-sm bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-all animate-in fade-in"
                 aria-label="Continue listening"
               >
                 <Mic size={16} />
@@ -253,7 +254,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
                     onHoldEnd();
                   }
                 }}
-                className={`flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 rounded-xl font-bold text-sm transition-all border touch-none select-none ${
+                className={`flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 rounded-lg font-bold text-sm transition-all border touch-none select-none ${
                   audio.recording
                     ? 'bg-red-500 text-white border-red-500 shadow-red-200 shadow-md'
                     : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
@@ -270,7 +271,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
             {active ? (
               <button
                 onClick={onFinish}
-                className="w-full sm:w-auto justify-center bg-blue-600 text-white hover:bg-blue-700 px-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 rounded-xl font-bold text-sm transition-all shadow-md flex items-center gap-2"
+                className="w-full sm:w-auto justify-center bg-blue-600 text-white hover:bg-blue-700 px-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 rounded-lg font-bold text-sm transition-all shadow-md flex items-center gap-2"
               >
                 <span aria-hidden>🏁</span>
                 Finish &amp; Assess
@@ -278,7 +279,8 @@ export const ControlBar: React.FC<ControlBarProps> = ({
             ) : (
               <button
                 onClick={onStartingSession}
-                className="w-14 h-14 flex items-center justify-center rounded-full transition-all group relative bg-blue-600 hover:bg-blue-700 active:scale-95 text-white shadow-blue-200 shadow-xl shrink-0"
+                className="w-14 h-14 flex items-center justify-center rounded-full transition-all group relative bg-blue-600 hover:bg-blue-700 active:scale-95 text-white shadow-lg shrink-0"
+                data-tour-id="mic-fab"
                 aria-label="Start speaking session"
               >
                 <svg

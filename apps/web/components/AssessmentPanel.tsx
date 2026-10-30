@@ -14,12 +14,12 @@ export const SessionStat: React.FC<{
   value: string | number;
   unit?: string;
 }> = ({ icon, label, value, unit = '' }) => (
-  <div className="flex flex-col items-center justify-center p-2 sm:p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 min-w-0">
+  <div className="flex flex-col items-center justify-center p-2 sm:p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800 min-w-0">
     <span className="text-lg sm:text-xl mb-1" aria-hidden>
       {icon}
     </span>
     <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 truncate">{label}</span>
-    <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+    <span className="font-mono tabular-nums text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
       {value}
       {unit}
     </span>
@@ -58,7 +58,7 @@ export const AssessmentBar: React.FC<{ label: string; value: number }> = ({ labe
         />
       </div>
       <div className="w-8">
-        <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{value}/5</span>
+        <span className="font-mono tabular-nums text-xs font-bold text-slate-400 dark:text-slate-500">{value}/5</span>
       </div>
     </div>
   );
@@ -113,14 +113,14 @@ export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, ha
         { l: '🔥 Streak', v: `${streak}`, t: 'Chuỗi ngày học liên tiếp' },
         { l: '⚡ XP', v: `${xp}`, t: 'Tổng XP đã tích lũy' },
       ].map((s) => (
-        <div key={s.l} title={s.t} className="bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-xl py-2 px-1">
+        <div key={s.l} title={s.t} className="bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-lg py-2 px-1">
           <div className="text-[10px] font-bold text-slate-400 uppercase">{s.l}</div>
-          <div className="text-sm font-bold text-slate-800 dark:text-white">{s.v}</div>
+          <div className="font-mono tabular-nums text-sm font-bold text-slate-800 dark:text-white">{s.v}</div>
         </div>
       ))}
     </div>
 
-    <div className={`rounded-2xl border px-3 py-2.5 mb-4 text-[11px] leading-relaxed ${mc.accent}`}>
+    <div className={`rounded-lg border px-3 py-2.5 mb-4 text-[11px] leading-relaxed ${mc.accent}`}>
       <span className="font-bold">Focus {mc.title}: </span>{mc.skills.join(' · ')} — {mc.rubric}
     </div>
 
@@ -169,7 +169,7 @@ export const AssessmentPanel: React.FC<AssessmentPanelProps> = ({ assessment, ha
     </div>
 
     <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
-      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 border border-slate-100 dark:border-slate-700">
+      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-100 dark:border-slate-700">
         <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2">
           Coach Insight
         </p>

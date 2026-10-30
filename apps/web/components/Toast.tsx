@@ -71,7 +71,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return (
             <div
               key={t.id}
-              className={`pointer-events-auto flex items-center gap-2 max-w-sm w-fit px-4 py-2.5 rounded-2xl shadow-lg text-white text-sm font-medium transition-all duration-200 ${bg} ${t.leaving ? 'opacity-0 translate-y-2' : 'opacity-100 translate-y-0'}`}
+              className={`pointer-events-auto flex items-center gap-2 max-w-sm w-fit px-4 py-2.5 rounded-lg shadow-lg text-white text-sm font-medium transition-all duration-200 ${bg} ${t.leaving ? 'opacity-0 translate-y-2' : 'opacity-100 translate-y-0'}`}
             >
               <Icon size={16} className="shrink-0" aria-hidden />
               <span className="min-w-0 break-words">{t.message}</span>

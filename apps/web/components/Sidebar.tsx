@@ -13,9 +13,9 @@ export const SidebarItem: React.FC<SidebarItemProps> = ({ mode, active, onClick 
   return (
     <button
       onClick={() => onClick(mode)}
-      className={`w-full flex items-start gap-2.5 px-3 py-2.5 rounded-2xl border transition-all text-left ${
+      className={`w-full flex items-start gap-2.5 px-3 py-2.5 rounded-lg border transition-all text-left ${
         active
-          ? 'bg-blue-600 text-white border-blue-600 shadow-lg'
+          ? 'bg-blue-600 text-white border-blue-600'
           : 'border-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-200 dark:hover:border-slate-700'
       }`}
       aria-current={active ? 'page' : undefined}
@@ -47,7 +47,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeMode, onChangeMode }) =>
         ))}
       </div>
     </div>
-    <div className={`rounded-2xl p-4 border ${MODE_CONFIGS[activeMode].accent}`}>
+    <div className={`rounded-lg p-4 border ${MODE_CONFIGS[activeMode].accent}`}>
       <h3 className="font-bold text-sm mb-1">{MODE_CONFIGS[activeMode].coachRole} Tip</h3>
       <p className="text-xs leading-relaxed opacity-90">
         {MODE_CONFIGS[activeMode].tip}

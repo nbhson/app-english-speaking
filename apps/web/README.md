@@ -9,6 +9,8 @@
 [![Tailwind](https://img.shields.io/badge/Tailwind-Vite_plugin-38bdf8)](https://tailwindcss.com/)
 [![License](https://img.shields.io/badge/License-MIT-green)]()
 
+> 🎨 **Design system**: xem [`DESIGN.md`](./DESIGN.md) — Minimalism + Flat + Subtle Motion, radius/shadow/accent rules.
+
 ---
 
 ## 📋 Mục lục

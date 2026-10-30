@@ -170,7 +170,7 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved, onRe
 
   return (
     <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="AI Connection Settings">
-      <div ref={dialogRef} tabIndex={-1} className="w-full sm:max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[90vh] flex flex-col animate-in fade-in zoom-in duration-200 overflow-hidden focus:outline-none">
+      <div ref={dialogRef} tabIndex={-1} className="w-full sm:max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-xl sm:rounded-xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[90vh] flex flex-col animate-in fade-in zoom-in duration-200 overflow-hidden focus:outline-none">
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -178,7 +178,7 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved, onRe
             </div>
             <h2 className="text-lg font-bold text-slate-800 dark:text-white">AI Connection Settings</h2>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-400">
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400">
             <X size={18} />
           </button>
         </div>
@@ -203,7 +203,7 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved, onRe
             </div>
             <div className="flex gap-2">
               <input className={inputCls} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="New profile name (e.g. OpenAI, Local)…" />
-              <button onClick={addProfile} className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-900 dark:bg-white text-white dark:text-slate-900 whitespace-nowrap">
+              <button onClick={addProfile} className="px-4 py-2 rounded-lg text-xs font-bold bg-slate-900 dark:bg-white text-white dark:text-slate-900 whitespace-nowrap">
                 + Add
               </button>
             </div>
@@ -269,7 +269,7 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved, onRe
                 </datalist>
               </Field>
               <div>
-                <button onClick={handleTestConnection} disabled={testingConn} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 transition-all">
+                <button onClick={handleTestConnection} disabled={testingConn} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 transition-all">
                   {testingConn ? <Loader2 size={13} className="animate-spin" /> : <Wifi size={13} />}
                   {testingConn ? 'Testing…' : 'Test connection'}
                 </button>
@@ -415,7 +415,7 @@ export const SettingsModal: React.FC<Props> = ({ initial, onClose, onSaved, onRe
             <RotateCcw size={13} /> Reset defaults
           </button>
           <div className="flex items-center gap-2">
-            <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">Cancel</button>
+            <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">Cancel</button>
             <button onClick={handleSave} className={btnPrimary}>
               <Save size={14} /> Save & Apply
             </button>

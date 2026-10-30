@@ -25,8 +25,11 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   const mc = MODE_CONFIGS[mode];
 
   return (
-    <div className="min-h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto py-8 px-2">
-      <div className={`w-full text-left rounded-2xl border px-4 py-3 mb-5 ${mc.accent}`}>
+    <div className="relative min-h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto py-8 px-2">
+      {/* Aurora: 1 gradient surface duy nhất của app — light mode opacity thấp hơn */}
+      <div className="aurora-hero" aria-hidden />
+      <div className="relative z-10 flex flex-col items-center w-full">
+      <div className={`w-full text-left rounded-lg border px-4 py-3 mb-5 ${mc.accent}`}>
         <div className="text-xs font-bold uppercase tracking-widest opacity-70">{mc.coachRole} · {mc.tagline}</div>
         <div className="text-lg font-bold">{mc.title}</div>
         <div className="text-xs mt-1 opacity-80">{mc.description}</div>
@@ -51,7 +54,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 key={sc.id}
                 onClick={() => onScenario(sc.id)}
                 aria-pressed={scenarioId === sc.id}
-                className={`text-left px-3 py-2.5 rounded-2xl border text-xs transition-all ${scenarioId === sc.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-sm' : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'}`}
+                className={`text-left px-3 py-2.5 rounded-lg border text-xs transition-all ${scenarioId === sc.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'}`}
               >
                 <div className="font-bold text-sm dark:text-white"><span className="mr-1" aria-hidden>{sc.icon}</span>{sc.label}</div>
               </button>
@@ -71,7 +74,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             value={customTopic}
             onChange={(e) => onTopic(e.target.value)}
             placeholder="e.g., used to vs be used to, present perfect..."
-            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white"
+            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white"
           />
           <div className="flex flex-wrap gap-1.5 mt-2">
             {mc.starters.map((s) => (
@@ -102,11 +105,13 @@ export const StartScreen: React.FC<StartScreenProps> = ({
       <button
         onClick={onStart}
         disabled={mode === AppMode.CUSTOM && !customTopic.trim()}
-        className={`bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-2xl font-bold transition-all transform hover:scale-105 shadow-lg ${mode === AppMode.CUSTOM && !customTopic.trim() ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}
+        data-tour-id="start-cta"
+        className={`bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold transition-all active:scale-[0.98] shadow-md shadow-blue-600/25 ${mode === AppMode.CUSTOM && !customTopic.trim() ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}
       >
         Start Session Now
       </button>
       <p className="mt-4 text-xs text-slate-400 dark:text-slate-500" lang="vi">💡 {mc.tip}</p>
+      </div>
     </div>
   );
 };

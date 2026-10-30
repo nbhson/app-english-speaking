@@ -144,7 +144,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
 
   return (
     <div className="fixed inset-0 z-[150] flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="My Learning Library">
-      <div ref={dialogRef} tabIndex={-1} className="w-full sm:max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[88vh] flex flex-col overflow-hidden focus:outline-none">
+      <div ref={dialogRef} tabIndex={-1} className="w-full sm:max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-xl sm:rounded-xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[88vh] flex flex-col overflow-hidden focus:outline-none">
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-bold dark:text-white">📚 My Learning Library</h2>
@@ -166,7 +166,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
               </button>
             )}
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-400" aria-label="Close library">
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400" aria-label="Close library">
             <X size={18} />
           </button>
         </div>
@@ -351,7 +351,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
               )}
               {(dueOnly ? fMistakes.filter((m) => !m.mastered && isDue(m.nextReview)) : [...fMistakes].sort((a, b) => Number(isDue(a.nextReview)) - Number(isDue(b.nextReview)) || (a.nextReview ?? 0) - (b.nextReview ?? 0)))
                 .map((m) => (
-                <div key={m.id} className={`border rounded-2xl p-4 ${m.mastered ? 'border-green-200 bg-green-50/50 dark:bg-green-900/10' : 'border-slate-200 dark:border-slate-700'}`}>
+                <div key={m.id} className={`border rounded-lg p-4 ${m.mastered ? 'border-green-200 bg-green-50/50 dark:bg-green-900/10' : 'border-slate-200 dark:border-slate-700'}`}>
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-xs text-red-500 line-through flex-1">{m.original}</p>
                     {!m.mastered && (
@@ -397,7 +397,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
               )}
               <div className="grid gap-2">
                 {[...fVocab].sort((a, b) => Number(isDue(a.nextReview)) - Number(isDue(b.nextReview)) || (a.nextReview ?? 0) - (b.nextReview ?? 0)).map((v) => (
-                  <div key={v.id} className="flex items-center gap-3 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-2.5">
+                  <div key={v.id} className="flex items-center gap-3 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5">
                     <div className="flex-1 min-w-0">
                       <span className="font-bold text-sm dark:text-white">{v.word}</span>
                       <span className="text-xs text-blue-600 ml-2">{v.translation}</span>
@@ -451,20 +451,20 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                   value={newTaskTitle}
                   onChange={(e) => setNewTaskTitle(e.target.value)}
                   placeholder="Đăng ký task luyện tập, vd: 'Practice 15 phút mỗi ngày'"
-                  className="flex-1 text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 dark:bg-slate-800 dark:text-white placeholder-slate-400"
+                  className="flex-1 text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 dark:bg-slate-800 dark:text-white placeholder-slate-400"
                   maxLength={300}
                 />
                 <input
                   type="date"
                   value={newTaskDue}
                   onChange={(e) => setNewTaskDue(e.target.value)}
-                  className="text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 dark:bg-slate-800 dark:text-white"
+                  className="text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 dark:bg-slate-800 dark:text-white"
                   title="Hạn chót (tùy chọn)"
                 />
                 <button
                   type="submit"
                   disabled={!newTaskTitle.trim()}
-                  className="flex items-center gap-1 text-xs font-bold px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-xl transition-colors"
+                  className="flex items-center gap-1 text-xs font-bold px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-lg transition-colors"
                 >
                   <Plus size={13} /> Add
                 </button>
@@ -482,7 +482,7 @@ export const LibraryPanel: React.FC<Props> = ({ config, onClose, onPractice }) =
                   return (
                     <div
                       key={t.id}
-                      className={`flex items-start gap-3 border rounded-2xl px-4 py-3 ${t.completed ? 'border-green-200 dark:border-green-900/30 bg-green-50/50 dark:bg-green-900/10' : 'border-slate-200 dark:border-slate-700'}`}
+                      className={`flex items-start gap-3 border rounded-lg px-4 py-3 ${t.completed ? 'border-green-200 dark:border-green-900/30 bg-green-50/50 dark:bg-green-900/10' : 'border-slate-200 dark:border-slate-700'}`}
                     >
                       <button
                         onClick={() => {

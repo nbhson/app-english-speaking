@@ -17,7 +17,7 @@ export const CorrectionCard: React.FC<Props> = ({ content }) => {
   if (!original && !corrected && !alternative && !explanation) return null;
 
   return (
-    <div className="my-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-500">
+    <div className="my-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
       <div className="bg-slate-50 dark:bg-slate-900/50 px-4 py-2 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
         <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
           Correction & Improvement · auto-saved

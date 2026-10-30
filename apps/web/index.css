@@ -67,6 +67,10 @@
   --slate-950: 10 10 10;
 }
 
+@theme {
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 body {
   font-family: 'Inter', sans-serif;
   background-color: #f8fafc;
@@ -81,4 +85,178 @@ body {
 /* iOS momentum scroll + hidden scrollbars for toolbars */
 .overflow-y-auto {
   -webkit-overflow-scrolling: touch;
+}
+
+/* ============================================================
+   DESIGN SYSTEM — FluentDev
+   Direction: Minimalism (base) + Flat Design (components) + Subtle Motion
+   ("calm premium" — nhẹ nhàng, tập trung nội dung, 1 accent duy nhất)
+
+   Hard rules:
+   - Radius: panel/hero = rounded-xl (12px) · button/badge = rounded-lg (8px)
+     · dense input = rounded-md (6px) · pill chips & FAB = rounded-full
+   - Depth: card dùng border 1px, KHÔNG shadow. Chỉ 2 exception:
+     CTA chính (shadow-md, blue/25) + floating/glass popover (shadow-lg/2xl).
+   - Accent: blue-600 là accent duy nhất cho CTA/active. 5 mode colors
+     chỉ xuất hiện ở dot + tinted chip (accent trong modes.ts) — không tô
+     full-panel. Teal chỉ dùng trong bảng Assessment (data identity).
+   - Motion: chỉ micro-transition (color/scale 0.15s). Không bounce lớn.
+   - Mono: JetBrains Mono cho code + metric numerals (tabular-nums).
+   ============================================================ */
+
+/* --- Aurora hero (CHỈ ở Start Screen — 1 surface, opacity cực thấp) --- */
+.aurora-hero {
+  position: absolute;
+  inset: -12% -16% 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.3;
+}
+.dark .aurora-hero {
+  opacity: 0.45;
+}
+.aurora-hero::before,
+.aurora-hero::after {
+  content: '';
+  position: absolute;
+  width: 55%;
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  filter: blur(72px);
+}
+/* Blue blob — góc trái trên */
+.aurora-hero::before {
+  top: -18%;
+  left: -8%;
+  background: radial-gradient(closest-side, rgb(59 130 246 / 0.55), transparent 70%);
+  animation: aurora-drift 26s ease-in-out infinite alternate;
+}
+/* Violet blob — góc phải dưới */
+.aurora-hero::after {
+  bottom: -34%;
+  right: -10%;
+  background: radial-gradient(closest-side, rgb(139 92 246 / 0.45), transparent 70%);
+  animation: aurora-drift 34s ease-in-out infinite alternate-reverse;
+}
+@keyframes aurora-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(16%, 10%, 0) scale(1.18);
+  }
+}
+/* Motion an toàn: user prefers-reduced-motion → gradient đứng yên vẫn đẹp */
+@media (prefers-reduced-motion: reduce) {
+  .aurora-hero::before,
+  .aurora-hero::after {
+    animation: none;
+  }
+}
+
+/* --- Guided tour (driver.js) — popover match FluentDev design system --- */
+:root {
+  --driver-popover-font-family: 'Inter', sans-serif;
+}
+.driver-popover.fd-tour-popover {
+  background: #ffffff;
+  color: #1e293b;
+  border: 1px solid rgb(226 232 240);
+  border-radius: 12px;
+  padding: 16px 18px 12px;
+  max-width: 360px;
+  box-shadow: 0 20px 45px rgb(2 6 23 / 0.2);
+}
+.driver-popover.fd-tour-popover .driver-popover-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+.driver-popover.fd-tour-popover .driver-popover-description {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #475569;
+}
+.driver-popover.fd-tour-popover .driver-popover-description strong {
+  color: #2563eb;
+  font-weight: 600;
+}
+.driver-popover.fd-tour-popover .driver-popover-close-btn {
+  color: #94a3b8;
+  border-radius: 8px;
+}
+.driver-popover.fd-tour-popover .driver-popover-close-btn:hover {
+  color: #334155;
+  background: rgb(241 245 249);
+}
+.driver-popover.fd-tour-popover .driver-popover-progress-text {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+.driver-popover.fd-tour-popover .driver-popover-prev-btn {
+  border: 1px solid rgb(226 232 240);
+  border-radius: 8px;
+  background: #fff;
+  color: #475569;
+}
+.driver-popover.fd-tour-popover .driver-popover-prev-btn:hover {
+  background: rgb(248 250 252);
+}
+.driver-popover.fd-tour-popover .driver-popover-next-btn {
+  background: #2563eb;
+  border-radius: 8px;
+  text-shadow: none;
+  font-weight: 700;
+  box-shadow: 0 4px 10px rgb(37 99 235 / 0.25);
+}
+.driver-popover.fd-tour-popover .driver-popover-next-btn:hover {
+  background: #1d4ed8;
+}
+.driver-popover.fd-tour-popover .driver-popover-next-btn.driver-popover-done-btn {
+  background: #2563eb;
+}
+/* Dark mode — cùng surface tokens của app */
+.dark .driver-popover.fd-tour-popover {
+  background: #0f172a;
+  border-color: rgb(30 41 59);
+  box-shadow: 0 20px 40px rgb(0 0 0 / 0.5);
+}
+.dark .driver-popover.fd-tour-popover .driver-popover-title {
+  color: #f1f5f9;
+}
+.dark .driver-popover.fd-tour-popover .driver-popover-description {
+  color: #94a3b8;
+}
+.dark .driver-popover.fd-tour-popover .driver-popover-close-btn {
+  color: #64748b;
+}
+.dark .driver-popover.fd-tour-popover .driver-popover-close-btn:hover {
+  color: #e2e8f0;
+}
+.dark .driver-popover.fd-tour-popover .driver-popover-arrow-side-bottom.driver-popover-arrow {
+  border-bottom-color: #0f172a;
+}
+.dark .driver-popover.fd-tour-popover .driver-popover-arrow-side-top {
+  border-top-color: #0f172a;
+}
+.dark .driver-popover.fd-tour-popover .driver-popover-arrow-side-left {
+  border-left-color: #0f172a;
+}
+.dark .driver-popover.fd-tour-popover .driver-popover-arrow-side-right {
+  border-right-color: #0f172a;
+}
+/* Modal welcome vẫn bật khi tour sắp chạy → overlay tour nằm trên modal */
+.driver-popover.fd-tour-popover {
+  z-index: 10010;
+}
+/* Reduced motion: tắt animation di chuyển stage/popover */
+@media (prefers-reduced-motion: reduce) {
+  .driver-fade {
+    transition: none !important;
+  }
 }
