@@ -214,23 +214,18 @@ export const Header: React.FC<Props> = ({
               </div>
             </div>
             <div className="p-1.5">
-              {onOpenLibrary && (
-                <button
-                  role="menuitem"
-                  onClick={() => { setMenuOpen(false); onOpenLibrary(); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left"
+              {/* Trạng thái sync — hữu ích cho mobile (pill ngoài header bị ẩn < md) */}
+              {libraryOnline !== null && (
+                <div
+                  className={`flex md:hidden items-center gap-2 px-3 py-2 text-[11px] font-bold uppercase tracking-wider rounded-xl ${
+                    libraryOnline ? 'text-green-700 dark:text-green-300' : 'text-slate-400'
+                  }`}
                 >
-                  <Library size={15} className="text-slate-400" aria-hidden /> My Library
-                </button>
+                  <span className={`w-2 h-2 rounded-full ${libraryOnline ? 'bg-green-500' : 'bg-slate-400'}`} aria-hidden />
+                  {libraryOnline ? 'Library Sync' : 'Local Only'}
+                </div>
               )}
-              <button
-                role="menuitem"
-                onClick={() => { setMenuOpen(false); onOpenSettings(); }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left"
-              >
-                <Settings size={15} className="text-slate-400" aria-hidden /> Settings
-              </button>
-              <div className="my-1 h-px bg-slate-100 dark:bg-slate-800" aria-hidden />
+              <div className="h-px bg-slate-100 dark:bg-slate-800 md:hidden" aria-hidden />
               <button
                 role="menuitem"
                 onClick={() => { setMenuOpen(false); onSignOut(); }}
