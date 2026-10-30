@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Mic, Library, Target, ArrowRight, X } from 'lucide-react';
 import { useModalFocus } from '../hooks/useModalFocus';
 import { btnPrimary, btnSecondary } from '../utils/ui';
+import { GuidedTour } from './GuidedTour';
 
 const STEPS: Array<{ icon: React.ReactNode; title: string; body: React.ReactNode }> = [
   {
@@ -62,26 +63,34 @@ export function markOnboarded(): void {
   }
 }
 
-/** F2 — 3-step first-run onboarding tour (a11y: dialog, focus trap, Escape, dots + step labels). */
+/** F2 — First-run flow: welcome modal (3 bước) → guided spotlight tour (driver.js). */
 export const Onboarding: React.FC<{ onDone: () => void }> = ({ onDone }) => {
   const [step, setStep] = useState(0);
+  const [phase, setPhase] = useState<'modal' | 'tour'>('modal');
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  // Bỏ qua qua nút X/Escape → skip cả tour, không hiện lại lần sau.
   const close = () => {
     markOnboarded();
     onDone();
   };
+  // Modal đi hết 3 bước → chuyển sang spotlight tour (driver.js tự markOnboarded).
+  const finishModal = () => {
+    markOnboarded();
+    setPhase('tour');
+  };
   useModalFocus(dialogRef, close);
+  if (phase === 'tour') return <GuidedTour onDone={onDone} />;
   const s = STEPS[step];
   const last = step === STEPS.length - 1;
 
   return (
     <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Hướng dẫn sử dụng FluentDev">
-      <div ref={dialogRef} tabIndex={-1} className="w-full sm:max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-6 focus:outline-none">
+      <div ref={dialogRef} tabIndex={-1} className="w-full sm:max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-xl sm:rounded-xl shadow-2xl p-6 focus:outline-none">
         <div className="flex items-start justify-between mb-3">
-          <div className="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center" aria-hidden>
+          <div className="w-14 h-14 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center" aria-hidden>
             {s.icon}
           </div>
-          <button onClick={close} className="p-2 -m-1 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" aria-label="Bỏ qua hướng dẫn">
+          <button onClick={close} className="p-2 -m-1 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" aria-label="Bỏ qua hướng dẫn">
             <X size={16} />
           </button>
         </div>
@@ -104,11 +113,11 @@ export const Onboarding: React.FC<{ onDone: () => void }> = ({ onDone }) => {
               </button>
             )}
             <button
-              onClick={() => (last ? close() : setStep((v) => v + 1))}
+              onClick={() => (last ? finishModal() : setStep((v) => v + 1))}
               className={btnPrimary}
-              aria-label={last ? 'Hoàn thành hướng dẫn' : 'Sang bước tiếp theo'}
+              aria-label={last ? 'Tham quan ứng dụng' : 'Sang bước tiếp theo'}
             >
-              {last ? 'Bắt đầu học 🚀' : 'Next'} {!last && <ArrowRight size={14} />}
+              {last ? 'Tham quan ứng dụng →' : 'Next'} {!last && <ArrowRight size={14} />}
             </button>
           </div>
         </div>
