@@ -105,6 +105,13 @@ rebuildWithUserId(
 db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);');
 db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);');
 
+// Dọn session hết hạn — chạy lúc boot + 1 lần/giờ (rows không tự biến mất).
+function cleanExpiredSessions() {
+  db.prepare('DELETE FROM auth_sessions WHERE expires_at <= ?').run(Date.now());
+}
+cleanExpiredSessions();
+setInterval(cleanExpiredSessions, 3600_000).unref();
+
 const uid = () => crypto.randomUUID();
 
 // ---------- Auth helpers (node:crypto — zero deps) ----------
@@ -252,16 +259,23 @@ app.use((req, _res, next) => {
 // hành vi local-first như cũ — mọi thứ vẫn hoạt động không cần tài khoản).
 const scopeId = (req) => (req.user ? req.user.id : '');
 
-function setSessionCookie(res, token) {
-  res.setHeader(
-    'Set-Cookie',
-    `${SESSION_COOKIE}=${token}; HttpOnly; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}; SameSite=Lax`,
-  );
+// Cookie Secure khi request qua https (reverse proxy / production) — dev
+// localhost http giữ nguyên vì browser từ chối set cookie Secure trên http
+// thường (localhost được ngoại lệ, nhưng tránh phụ thuộc hành vi đó).
+function isSecureReq(req) {
+  if (req.secure) return true;
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  return proto === 'https';
+}
+function setSessionCookie(req, res, token) {
+  const flags = [`fd_session=${token}`, 'HttpOnly', 'Path=/', `Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`, 'SameSite=Lax'];
+  if (isSecureReq(req)) flags.push('Secure');
+  res.setHeader('Set-Cookie', flags.join('; '));
 }
 function clearSessionCookie(res) {
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`);
 }
-function createAuthSession(res, userId) {
+function createAuthSession(req, res, userId) {
   const token = crypto.randomBytes(32).toString('hex');
   db.prepare('INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)').run(
     sha256(token),
@@ -269,14 +283,7 @@ function createAuthSession(res, userId) {
     Date.now(),
     Date.now() + SESSION_TTL_MS,
   );
-  setSessionCookie(res, token);
-}
-// Local-first merge-once: lần đầu login (hoặc đăng ký), toàn bộ data ẩn danh
-// (đã mirror từ localStorage trước đó) thuộc về user vừa đăng nhập.
-function adoptAnonymous(userId) {
-  for (const t of ['sessions', 'mistakes', 'vocab', 'tasks', 'progress_days']) {
-    db.prepare(`UPDATE ${t} SET user_id = ? WHERE user_id = ''`).run(userId);
-  }
+  setSessionCookie(req, res, token);
 }
 // Local-first merge-once: lần đầu login (hoặc đăng ký), toàn bộ data ẩn danh
 // (đã mirror từ localStorage trước đó) thuộc về user vừa đăng nhập.
@@ -289,6 +296,31 @@ function adoptAnonymous(userId) {
 // ---------- Auth: register / login / logout / me ----------
 const valUsername = (v) => typeof v === 'string' && /^[a-zA-Z0-9_.-]{3,32}$/.test(v.trim());
 
+// Simple in-memory rate limit cho /api/auth/* (đủ cho app local; không cần
+// redis): 10 lần / phút / IP+username. Reset dần qua vòng quét định kỳ.
+const RATE_LIMIT = 10;
+const RATE_WINDOW_MS = 60_000;
+const authAttempts = new Map(); // key → number[] (timestamps)
+function authRateLimited(key) {
+  const nowTs = Date.now();
+  const arr = (authAttempts.get(key) || []).filter((t) => nowTs - t < RATE_WINDOW_MS);
+  arr.push(nowTs);
+  authAttempts.set(key, arr);
+  return arr.length > RATE_LIMIT;
+}
+setInterval(() => {
+  const nowTs = Date.now();
+  for (const [k, arr] of authAttempts) {
+    const alive = arr.filter((t) => nowTs - t < RATE_WINDOW_MS);
+    if (alive.length === 0) authAttempts.delete(k);
+    else authAttempts.set(k, alive);
+  }
+}, RATE_WINDOW_MS).unref();
+
+// Anti username-enumeration: khi user không tồn tại vẫn "verify" với hash giả
+// để thời gian phản hồi như login sai password thật (scrypt ~50-100ms).
+const DUMMY_HASH = hashPassword('dummy-password-for-timing');
+
 app.post('/api/auth/register', (req, res) => {
   const b = req.body || {};
   const username = typeof b.username === 'string' ? b.username.trim() : '';
@@ -297,6 +329,8 @@ app.post('/api/auth/register', (req, res) => {
   if (typeof password !== 'string' || password.length < 6 || password.length > 200) {
     return res.status(400).json({ error: 'password cần từ 6 đến 200 ký tự' });
   }
+  const rlKey = `reg:${req.ip}:${username.toLowerCase()}`;
+  if (authRateLimited(rlKey)) return res.status(429).json({ error: 'Thử lại sau một phút' });
   if (db.prepare('SELECT id FROM users WHERE username = ?').get(username)) {
     return res.status(409).json({ error: 'username đã tồn tại — chọn tên khác' });
   }
@@ -308,7 +342,7 @@ app.post('/api/auth/register', (req, res) => {
     Date.now(),
   );
   adoptAnonymous(id); // dữ liệu local/trước đó của browser này → account mới
-  createAuthSession(res, id);
+  createAuthSession(req, res, id);
   res.status(201).json({ user: { id, username } });
 });
 
@@ -316,14 +350,21 @@ app.post('/api/auth/login', (req, res) => {
   const b = req.body || {};
   const username = typeof b.username === 'string' ? b.username.trim() : '';
   const password = typeof b.password === 'string' ? b.password : '';
+  // Rate limit TRƯỚC verify: 10+ lần thử (đúng hay sai) trong 1 phút → 429.
+  // Key theo IP+username nên kẻ khác đăng nhập cùng tài khoản từ IP khác
+  // không bị ảnh hưởng, và user bị spam không chặn được user khác.
+  if (valUsername(username) && authRateLimited(`login:${req.ip}:${username.toLowerCase()}`)) {
+    return res.status(429).json({ error: 'Quá nhiều lần thử — chờ một phút rồi thử lại' });
+  }
   const user = valUsername(username)
     ? db.prepare('SELECT * FROM users WHERE username = ?').get(username)
     : null;
-  if (!user || !verifyPassword(password, user.password_hash)) {
+  const ok = user ? verifyPassword(password, user.password_hash) : verifyPassword(password, DUMMY_HASH);
+  if (!user || !ok) {
     return res.status(401).json({ error: 'username hoặc password không đúng' });
   }
   adoptAnonymous(user.id);
-  createAuthSession(res, user.id);
+  createAuthSession(req, res, user.id);
   res.json({ user: { id: user.id, username: user.username } });
 });
 

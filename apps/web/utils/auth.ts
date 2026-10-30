@@ -1,6 +1,6 @@
 // Auth client — cookie-session (httpOnly `fd_session` tại Library server).
-// App vẫn chạy 100% local-first khi chưa đăng nhập; cookie chỉ ảnh hưởng
-// việc mirror/sync của serverStore (fetch credentials: 'include').
+// Login bắt buộc ở UI (auth gate), nhưng storage vẫn local-first: data lưu
+// localStorage trước, mirror lên server qua serverStore (credentials include).
 
 import { LIBRARY_API_URL } from './config';
 
@@ -43,9 +43,21 @@ export interface AuthResult {
   error?: string;
 }
 
+// Timeout cho mọi auth fetch: server "đơ" (không refuse mà treo) không được
+// phép treo gate spinner / nút submit vô hạn.
+async function fetchWithTimeout(url: string, init: RequestInit = {}, ms = 4000): Promise<Response> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function authRequest(path: string, body: unknown): Promise<AuthResult> {
   try {
-    const r = await fetch(`${LIBRARY_API_URL}/api/auth/${path}`, {
+    const r = await fetchWithTimeout(`${LIBRARY_API_URL}/api/auth/${path}`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -67,7 +79,7 @@ function saveUser(user: AuthUser | null): void {
 /** Hỏi server user hiện tại (cookie). null nếu chưa login/anonymous. */
 export async function fetchMe(): Promise<AuthUser | null> {
   try {
-    const r = await fetch(`${LIBRARY_API_URL}/api/auth/me`, { credentials: 'include' });
+    const r = await fetchWithTimeout(`${LIBRARY_API_URL}/api/auth/me`, { credentials: 'include' });
     if (!r.ok) return null;
     const j = (await r.json()) as AuthResponse;
     saveUser(j?.user ?? null);
@@ -87,7 +99,7 @@ export async function login(username: string, password: string): Promise<AuthRes
 
 export async function logout(): Promise<void> {
   try {
-    await fetch(`${LIBRARY_API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' });
+    await fetchWithTimeout(`${LIBRARY_API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' });
   } catch {
     /* ignore */
   }
