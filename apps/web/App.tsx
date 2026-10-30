@@ -22,10 +22,8 @@ const LibraryPanel = React.lazy(() =>
 const SettingsModal = React.lazy(() =>
   import('./components/SettingsModal').then((mod) => ({ default: mod.SettingsModal })),
 );
-const AuthModal = React.lazy(() =>
-  import('./components/AuthModal').then((mod) => ({ default: mod.AuthModal })),
-);
 import { Header } from './components/Header';
+import { AuthModal } from './components/AuthModal';
 import { Sidebar } from './components/Sidebar';
 import { SelectionTranslator } from './components/SelectionTranslator';
 import { ChatMessageList } from './components/ChatMessageList';
@@ -71,11 +69,11 @@ const App: React.FC = () => {
   const [config, setConfig] = useState<AIConfig>(() => loadConfig());
   const [showSettings, setShowSettings] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
-  // Auth: cache username cho UI render ngay; fetchMe() xác nhận với server
-  // (cookie fd_session là source of truth). null = anonymous — app vẫn chạy
-  // local-first như cũ.
+  // Auth (bắt buộc đăng nhập): cache username cho UI render ngay; fetchMe()
+  // xác nhận với server (cookie fd_session là source of truth). authChecked
+  // chặn flash: chưa resolve xong thì hiện boot screen, chưa login thì gate.
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => cachedUser());
-  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   // One-time notice for pre-proxy users: a plaintext API key was found in
   // localStorage — offer the server-proxy switch (never switch silently).
   // Lazy initializer (not an effect): avoids a sync setState in effect.
@@ -220,20 +218,24 @@ const App: React.FC = () => {
   useEffect(() => { customTopicRef.current = customTopic; }, [customTopic]);
   useEffect(() => { scenarioRef.current = scenarioId; }, [scenarioId]);
 
-  // Auth boot: hỏi server session hiện tại (cookie). Không chặn render — UI
-  // dùng cachedUser() trước, fetchMe() chỉ cập nhật username/đăng xuất cache.
+  // Auth boot: hỏi server session hiện tại (cookie). fetchMe() fallback về
+  // cachedUser() khi server không chạy — user đã login trước đó vẫn vào được
+  // app (offline-friendly); chưa từng login thì gate hiện kèm lỗi kết nối.
   useEffect(() => {
     let alive = true;
-    void fetchMe().then((u) => {
-      if (alive) setAuthUser(u);
-    });
+    void fetchMe()
+      .then((u) => {
+        if (alive) setAuthUser(u);
+      })
+      .finally(() => {
+        if (alive) setAuthChecked(true);
+      });
     return () => {
       alive = false;
     };
   }, []);
 
   const handleSignedIn = (username: string) => {
-    setShowAuthModal(false);
     setAuthUser(cachedUser());
     // Merge-once: đẩy data localStorage vào account vừa đăng nhập (server đã
     // adopt data ẩn danh trước đó; migrate chỉ push phần chưa có trên server).
@@ -755,6 +757,24 @@ const App: React.FC = () => {
     }
   };
 
+  // ---------- Auth gate (bắt buộc đăng nhập) ----------
+  // Early return SAU tất cả hooks — hook order ổn định giữa các render.
+  if (!authChecked) {
+    return (
+      <div className={`flex h-dvh items-center justify-center ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`} aria-busy="true" aria-label="Đang tải FluentDev">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center" aria-hidden>
+            <span className="text-white text-xl font-bold">F</span>
+          </div>
+          <div className="w-6 h-6 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin" aria-hidden></div>
+        </div>
+      </div>
+    );
+  }
+  if (!authUser) {
+    return <AuthModal variant="gate" onClose={() => {}} onSignedIn={handleSignedIn} />;
+  }
+
   return (
     <LazyMotion features={() => import('./utils/motionFeatures').then((mod) => mod.domAnimation)} strict>
     <AIConfigProvider config={config}>
@@ -768,7 +788,6 @@ const App: React.FC = () => {
           onOpenLibrary={() => setShowLibrary(true)}
           refreshSignal={libraryEpoch}
           authUser={authUser}
-          onSignIn={() => setShowAuthModal(true)}
           onSignOut={handleSignOut}
         />
         <SelectionTranslator config={config} />
@@ -1076,11 +1095,6 @@ const App: React.FC = () => {
               onSaved={(cfg) => setConfig(cfg)}
               onReplayTour={() => { setShowSettings(false); setShowTour(true); }}
             />
-          </Suspense>
-        )}
-        {showAuthModal && (
-          <Suspense fallback={null}>
-            <AuthModal onClose={() => setShowAuthModal(false)} onSignedIn={handleSignedIn} />
           </Suspense>
         )}
         {showLibrary && <Suspense fallback={null}><LibraryPanel config={config} onClose={() => { setShowLibrary(false); setStreak(getStreak()); setXp(totalXP()); setLibraryEpoch((v) => v + 1); }} onPractice={(mode, prefill) => {

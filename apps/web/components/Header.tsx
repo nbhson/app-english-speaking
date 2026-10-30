@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Moon, Sun, Settings, Library, LogOut, User } from 'lucide-react';
+import { Moon, Sun, Settings, Library, LogOut } from 'lucide-react';
 import { serverAvailable } from '../utils/serverStore';
 import { countDueReviews } from '../utils/storage';
 import type { AuthUser } from '../utils/auth';
@@ -11,9 +11,8 @@ interface Props {
   onOpenLibrary?: () => void;
   /** Bump khi Library đóng (sau khi user ôn thẻ) để tính lại badge SRS due. */
   refreshSignal?: number;
-  /** User đang đăng nhập (null = anonymous — app vẫn chạy local-first). */
-  authUser?: AuthUser | null;
-  onSignIn: () => void;
+  /** User đang đăng nhập (app yêu cầu login trước khi vào UI chính). */
+  authUser: AuthUser;
   onSignOut: () => void;
 }
 
@@ -33,8 +32,7 @@ export const Header: React.FC<Props> = ({
   onOpenSettings,
   onOpenLibrary,
   refreshSignal = 0,
-  authUser = null,
-  onSignIn,
+  authUser,
   onSignOut,
 }) => {
   const [libraryOnline, setLibraryOnline] = useState<boolean | null>(null);
@@ -88,39 +86,26 @@ export const Header: React.FC<Props> = ({
       </div>
     </div>
     <div className="flex items-center gap-2 shrink-0">
-      {authUser ? (
-        <div
-          className="flex items-center gap-2 h-10 pl-2.5 pr-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
-          title={`Đã đăng nhập — dữ liệu Library đồng bộ theo tài khoản "${authUser.username}"`}
-          data-tour-id="auth-chip"
-        >
-          <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[11px] font-bold uppercase" aria-hidden>
-            {authUser.username.slice(0, 1)}
-          </div>
-          <span className="hidden sm:block text-xs font-bold text-slate-700 dark:text-slate-200 max-w-[110px] truncate">
-            {authUser.username}
-          </span>
-          <button
-            onClick={onSignOut}
-            className="w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-            aria-label="Sign out"
-            title="Đăng xuất"
-          >
-            <LogOut size={14} />
-          </button>
+      <div
+        className="flex items-center gap-2 h-10 pl-2.5 pr-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+        title={`Đã đăng nhập — dữ liệu Library đồng bộ theo tài khoản "${authUser.username}"`}
+        data-tour-id="auth-chip"
+      >
+        <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[11px] font-bold uppercase" aria-hidden>
+          {authUser.username.slice(0, 1)}
         </div>
-      ) : (
+        <span className="hidden sm:block text-xs font-bold text-slate-700 dark:text-slate-200 max-w-[110px] truncate">
+          {authUser.username}
+        </span>
         <button
-          onClick={onSignIn}
-          className="h-10 px-3 flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 active:scale-95 transition-all focus-visible:ring-2 focus-visible:ring-blue-500/60 outline-none"
-          data-tour-id="signin-btn"
-          aria-label="Sign in to sync your library"
-          title="Đăng nhập để đồng bộ Library giữa các thiết bị"
+          onClick={onSignOut}
+          className="w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+          aria-label="Sign out"
+          title="Đăng xuất"
         >
-          <User size={15} />
-          <span className="hidden sm:inline">Sign in</span>
+          <LogOut size={14} />
         </button>
-      )}
+      </div>
       <button
         onClick={onOpenLibrary}
         className={`${iconBtnIdle} relative`}

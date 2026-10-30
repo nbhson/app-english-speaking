@@ -32,12 +32,14 @@ DB chỉ lưu `sha256(token)`. Không email verify / OAuth / reset password.
 - `POST /api/auth/logout` — xóa session hiện tại
 - `GET  /api/auth/me` — `{ user }` (null khi anonymous)
 
-**Local-first vẫn là mặc định:** chưa đăng nhập thì mọi API hoạt động như cũ
-(data scope `user_id = ''` — anonymous). Lần đầu đăng nhập/đăng ký, toàn bộ
-data ẩn danh của browser được "adopt" vào account (`adoptAnonymous`) — merge
-một lần, không mất dữ liệu. Sau đó mọi bảng được scoping theo `user_id`, mỗi
-user chỉ thấy library của mình. DB cũ được migration tự động (thêm cột
-`user_id`, rebuild unique constraints cho mistakes/vocab/progress_days).
+**Local-first storage:** chưa đăng nhập thì các API vẫn hoạt động (scope
+`user_id = ''` — anonymous). Web app hiện **yêu cầu đăng nhập** trước khi vào
+UI chính (auth gate) — nhưng storage vẫn local-first: data lưu localStorage
+trước, mirror SQLite qua server. Lần đầu đăng nhập/đăng ký, toàn bộ data ẩn
+danh của browser được "adopt" vào account (`adoptAnonymous`) — merge một lần,
+không mất dữ liệu. Sau đó mọi bảng được scoping theo `user_id`, mỗi user chỉ
+thấy library của mình. DB cũ được migration tự động (thêm cột `user_id`,
+rebuild unique constraints cho mistakes/vocab/progress_days).
 
 ## AI provider proxy
 

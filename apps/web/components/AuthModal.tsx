@@ -5,6 +5,8 @@ import { login, register } from '../utils/auth';
 import { btnPrimary } from '../utils/ui';
 
 interface AuthModalProps {
+  /** 'modal' = dialog nhỏ (có nút đóng); 'gate' = màn hình đăng nhập bắt buộc (không đóng được). */
+  variant?: 'modal' | 'gate';
   onClose: () => void;
   onSignedIn: (username: string) => void;
 }
@@ -13,7 +15,7 @@ const inputCls =
   'w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white';
 
 /** Đăng nhập / Đăng ký — đơn giản: username + password (cookie httpOnly). */
-export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSignedIn }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ variant = 'modal', onClose, onSignedIn }) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -21,7 +23,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSignedIn }) => 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  const close = () => onClose();
+  const isGate = variant === 'gate';
+  const close = () => {
+    if (!isGate) onClose();
+  };
   useModalFocus(dialogRef, close);
 
   const isRegister = mode === 'register';
@@ -50,20 +55,44 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSignedIn }) => 
     username.trim().length >= 3 && password.length >= 6 && (!isRegister || password === confirm);
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center sm:p-4 bg-black/40" role="dialog" aria-modal="true" aria-label="Đăng nhập FluentDev">
+    <div
+      className={`fixed inset-0 z-[200] flex items-end sm:items-center justify-center sm:p-4 ${
+        isGate
+          ? 'bg-slate-50 dark:bg-slate-950'
+          : 'bg-black/40'
+      }`}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Đăng nhập FluentDev"
+    >
       <div ref={dialogRef} tabIndex={-1} className="w-full sm:max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-xl sm:rounded-xl p-6 focus:outline-none">
+        {isGate && (
+          <div className="flex flex-col items-center text-center mb-5">
+            <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center mb-3" aria-hidden>
+              <span className="text-white text-xl font-bold">F</span>
+            </div>
+            <h1 className="text-lg font-bold text-slate-800 dark:text-white">FluentDev</h1>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+              AI English Speaking Coach
+            </p>
+          </div>
+        )}
         <div className="flex items-start justify-between mb-4">
           <div>
             <h2 className="text-lg font-bold text-slate-800 dark:text-white">
               {isRegister ? 'Tạo tài khoản' : 'Đăng nhập'}
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Đồng bộ Library (thẻ lỗi, vocab, streak, XP) giữa các thiết bị.
+              {isGate
+                ? 'Đăng nhập để bắt đầu luyện nói — tiến trình lưu theo tài khoản.'
+                : 'Đồng bộ Library (thẻ lỗi, vocab, streak, XP) giữa các thiết bị.'}
             </p>
           </div>
-          <button onClick={close} className="p-2 -m-1 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" aria-label="Đóng">
-            <X size={16} />
-          </button>
+          {!isGate && (
+            <button onClick={close} className="p-2 -m-1 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" aria-label="Đóng">
+              <X size={16} />
+            </button>
+          )}
         </div>
 
         <form onSubmit={submit} className="space-y-3" lang="vi">
