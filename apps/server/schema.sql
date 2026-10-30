@@ -2,6 +2,7 @@ PRAGMA journal_mode = WAL;
 
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL,
   started_at INTEGER NOT NULL,
   ended_at INTEGER NOT NULL,
@@ -12,6 +13,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   vocab_points INTEGER NOT NULL DEFAULT 0,
   confidence INTEGER NOT NULL DEFAULT 0
 );
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
@@ -27,35 +29,42 @@ CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
 
 CREATE TABLE IF NOT EXISTS mistakes (
   id TEXT PRIMARY KEY,
-  original TEXT NOT NULL UNIQUE,
+  user_id TEXT NOT NULL DEFAULT '',
+  original TEXT NOT NULL,
   corrected TEXT NOT NULL DEFAULT '',
   alternative TEXT NOT NULL DEFAULT '',
   explanation TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL DEFAULT '',
   review_count INTEGER NOT NULL DEFAULT 0,
   mastered INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  UNIQUE(user_id, original)
 );
 
 CREATE TABLE IF NOT EXISTS vocab (
   id TEXT PRIMARY KEY,
-  word TEXT NOT NULL UNIQUE,
+  user_id TEXT NOT NULL DEFAULT '',
+  word TEXT NOT NULL,
   translation TEXT NOT NULL DEFAULT '',
   ipa TEXT NOT NULL DEFAULT '',
   example TEXT NOT NULL DEFAULT '',
   review_count INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  UNIQUE(user_id, word)
 );
 
 CREATE TABLE IF NOT EXISTS progress_days (
-  date TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL DEFAULT '',
+  date TEXT NOT NULL,
   sessions INTEGER NOT NULL DEFAULT 0,
   minutes INTEGER NOT NULL DEFAULT 0,
-  xp INTEGER NOT NULL DEFAULT 0
+  xp INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, date)
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL DEFAULT '',
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   due_at INTEGER,
@@ -63,3 +72,20 @@ CREATE TABLE IF NOT EXISTS tasks (
   completed_at INTEGER,
   created_at INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
+
+-- ---------- Auth (đơn giản: username + password, scrypt, cookie session) ----------
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  password_hash TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  token_hash TEXT PRIMARY KEY,           -- sha256(token) — token gốc chỉ client giữ
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);

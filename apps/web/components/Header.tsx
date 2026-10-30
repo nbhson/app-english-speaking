@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Moon, Sun, Settings, Library } from 'lucide-react';
+import { Moon, Sun, Settings, Library, LogOut, User } from 'lucide-react';
 import { serverAvailable } from '../utils/serverStore';
 import { countDueReviews } from '../utils/storage';
+import type { AuthUser } from '../utils/auth';
 
 interface Props {
   isDarkMode: boolean;
@@ -10,10 +11,14 @@ interface Props {
   onOpenLibrary?: () => void;
   /** Bump khi Library đóng (sau khi user ôn thẻ) để tính lại badge SRS due. */
   refreshSignal?: number;
+  /** User đang đăng nhập (null = anonymous — app vẫn chạy local-first). */
+  authUser?: AuthUser | null;
+  onSignIn: () => void;
+  onSignOut: () => void;
 }
 
 const iconBtn =
-  'w-10 h-10 flex items-center justify-center rounded-2xl border transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-blue-500/60 outline-none';
+  'w-10 h-10 flex items-center justify-center rounded-lg border transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-blue-500/60 outline-none';
 const iconBtnIdle =
   `${iconBtn} bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700`;
 
@@ -28,6 +33,9 @@ export const Header: React.FC<Props> = ({
   onOpenSettings,
   onOpenLibrary,
   refreshSignal = 0,
+  authUser = null,
+  onSignIn,
+  onSignOut,
 }) => {
   const [libraryOnline, setLibraryOnline] = useState<boolean | null>(null);
   // F6: SRS due badge — tổng mistakes/vocab đến hạn ôn (đếm 30s/lần + khi Library đóng).
@@ -67,9 +75,9 @@ export const Header: React.FC<Props> = ({
 
   return (
   <div className="shrink-0 sticky top-0 z-20 w-full max-w-[1600px] mx-auto px-2 sm:px-4 md:px-6 pt-2 sm:pt-4 md:pt-6">
-  <header className="h-14 sm:h-16 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm flex items-center justify-between gap-2 px-2 sm:px-3 transition-colors">
-    <div className="flex items-center gap-2 min-w-0 pl-1">
-      <div className="w-9 h-9 shrink-0 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/20">
+  <header className="h-14 sm:h-16 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-between gap-2 px-2 sm:px-3 transition-colors">
+    <div className="flex items-center gap-2 min-w-0 pl-1" data-tour-id="brand">
+      <div className="w-9 h-9 shrink-0 bg-blue-600 rounded-lg flex items-center justify-center">
         <span className="text-white font-bold" aria-hidden>
           F
         </span>
@@ -80,9 +88,43 @@ export const Header: React.FC<Props> = ({
       </div>
     </div>
     <div className="flex items-center gap-2 shrink-0">
+      {authUser ? (
+        <div
+          className="flex items-center gap-2 h-10 pl-2.5 pr-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+          title={`Đã đăng nhập — dữ liệu Library đồng bộ theo tài khoản "${authUser.username}"`}
+          data-tour-id="auth-chip"
+        >
+          <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[11px] font-bold uppercase" aria-hidden>
+            {authUser.username.slice(0, 1)}
+          </div>
+          <span className="hidden sm:block text-xs font-bold text-slate-700 dark:text-slate-200 max-w-[110px] truncate">
+            {authUser.username}
+          </span>
+          <button
+            onClick={onSignOut}
+            className="w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            aria-label="Sign out"
+            title="Đăng xuất"
+          >
+            <LogOut size={14} />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={onSignIn}
+          className="h-10 px-3 flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 active:scale-95 transition-all focus-visible:ring-2 focus-visible:ring-blue-500/60 outline-none"
+          data-tour-id="signin-btn"
+          aria-label="Sign in to sync your library"
+          title="Đăng nhập để đồng bộ Library giữa các thiết bị"
+        >
+          <User size={15} />
+          <span className="hidden sm:inline">Sign in</span>
+        </button>
+      )}
       <button
         onClick={onOpenLibrary}
         className={`${iconBtnIdle} relative`}
+        data-tour-id="library-btn"
         aria-label={due > 0 ? `Open learning library — ${due} cards due for review` : 'Open learning library'}
         title={due > 0 ? `My Library — 🐞🔖 ${due} thẻ đến hạn ôn (SRS)` : 'My Library (history, mistakes, vocab)'}
       >
@@ -99,6 +141,7 @@ export const Header: React.FC<Props> = ({
       <button
         onClick={onOpenSettings}
         className={iconBtnIdle}
+        data-tour-id="settings-btn"
         aria-label="Open AI Connection Settings"
         title="AI Connection Settings"
       >
@@ -107,6 +150,7 @@ export const Header: React.FC<Props> = ({
       <button
         onClick={toggleDarkMode}
         className={iconBtnIdle}
+        data-tour-id="theme-btn"
         aria-label={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
         title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
       >
@@ -114,7 +158,7 @@ export const Header: React.FC<Props> = ({
       </button>
       {libraryOnline !== null && (
         <div
-          className={`hidden md:flex items-center gap-1.5 pl-3 pr-3 h-10 rounded-2xl border ${
+          className={`hidden md:flex items-center gap-1.5 pl-3 pr-3 h-10 rounded-lg border ${
             libraryOnline
               ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800/40'
               : 'bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700'

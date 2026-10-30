@@ -34,7 +34,115 @@ const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA journal_mode = WAL;');
 db.exec(fs.readFileSync(path.join(__dirname, '..', 'schema.sql'), 'utf8'));
 
+// ---------- Legacy-DB migration: thêm cột user_id ('' = anonymous/local) ----------
+// Bảng mới (schema.sql) đã có sẵn user_id; DB cũ cần ALTER/rebuild idempotent.
+function tableColumns(name) {
+  return db.prepare(`PRAGMA table_info(${name})`).all().map((r) => r.name);
+}
+function ensureUserIdColumn(name) {
+  if (!tableColumns(name).includes('user_id')) {
+    db.exec(`ALTER TABLE ${name} ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`);
+  }
+}
+ensureUserIdColumn('sessions');
+ensureUserIdColumn('tasks');
+// mistakes / vocab: UNIQUE(original|word) toàn cục chặn 2 user học cùng 1 từ →
+// rebuild với UNIQUE(user_id, original|word). progress_days: PK(date) cũ chặn
+// 2 user cùng ngày → rebuild với PK(user_id, date). Copy giữ user_id='' (anon).
+function rebuildWithUserId(name, createSql, copyCols) {
+  if (tableColumns(name).includes('user_id')) return; // schema mới rồi
+  const tmp = `${name}_rebuild`;
+  db.exec(`ALTER TABLE ${name} RENAME TO ${tmp}_old`);
+  db.exec(createSql);
+  db.exec(`INSERT INTO ${name} (user_id, ${copyCols}) SELECT '', ${copyCols} FROM ${tmp}_old`);
+  db.exec(`DROP TABLE ${tmp}_old`);
+}
+
+rebuildWithUserId(
+  'mistakes',
+  `CREATE TABLE mistakes (
+     id TEXT PRIMARY KEY,
+     user_id TEXT NOT NULL DEFAULT '',
+     original TEXT NOT NULL,
+     corrected TEXT NOT NULL DEFAULT '',
+     alternative TEXT NOT NULL DEFAULT '',
+     explanation TEXT NOT NULL DEFAULT '',
+     mode TEXT NOT NULL DEFAULT '',
+     review_count INTEGER NOT NULL DEFAULT 0,
+     mastered INTEGER NOT NULL DEFAULT 0,
+     created_at INTEGER NOT NULL,
+     UNIQUE(user_id, original)
+   );`,
+  'id, original, corrected, alternative, explanation, mode, review_count, mastered, created_at',
+);
+rebuildWithUserId(
+  'vocab',
+  `CREATE TABLE vocab (
+     id TEXT PRIMARY KEY,
+     user_id TEXT NOT NULL DEFAULT '',
+     word TEXT NOT NULL,
+     translation TEXT NOT NULL DEFAULT '',
+     ipa TEXT NOT NULL DEFAULT '',
+     example TEXT NOT NULL DEFAULT '',
+     review_count INTEGER NOT NULL DEFAULT 0,
+     created_at INTEGER NOT NULL,
+     UNIQUE(user_id, word)
+   );`,
+  'id, word, translation, ipa, example, review_count, created_at',
+);
+rebuildWithUserId(
+  'progress_days',
+  `CREATE TABLE progress_days (
+     user_id TEXT NOT NULL DEFAULT '',
+     date TEXT NOT NULL,
+     sessions INTEGER NOT NULL DEFAULT 0,
+     minutes INTEGER NOT NULL DEFAULT 0,
+     xp INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (user_id, date)
+   );`,
+  'date, sessions, minutes, xp',
+);
+db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);');
+db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);');
+
 const uid = () => crypto.randomUUID();
+
+// ---------- Auth helpers (node:crypto — zero deps) ----------
+// Password: scrypt 64 bytes + 16-byte salt, format "scrypt:<salt>:<hash>".
+// Session token: 32 random bytes, client giữ token trong httpOnly cookie,
+// server chỉ lưu sha256(token) trong auth_sessions (leak DB ≠ leak token).
+const SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 ngày
+const SESSION_COOKIE = 'fd_session';
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `scrypt:${salt}:${hash}`;
+}
+
+function verifyPassword(password, stored) {
+  try {
+    const [scheme, salt, hash] = String(stored).split(':');
+    if (scheme !== 'scrypt' || !salt || !hash) return false;
+    const candidate = crypto.scryptSync(String(password), salt, 64);
+    const expected = Buffer.from(hash, 'hex');
+    return crypto.timingSafeEqual(candidate, expected);
+  } catch {
+    return false;
+  }
+}
+
+const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
+
+function parseCookies(header) {
+  const out = {};
+  if (!header) return out;
+  for (const pair of header.split(';')) {
+    const idx = pair.indexOf('=');
+    if (idx > 0) out[pair.slice(0, idx).trim()] = decodeURIComponent(pair.slice(idx + 1).trim());
+  }
+  return out;
+}
 
 // YYYY-MM-DD theo giờ local (không phải UTC) — khớp todayKey() của web client.
 const localDateKey = (d) =>
@@ -114,6 +222,121 @@ app.post(/^\/api\/ai\/(chat\/completions|audio\/transcriptions|audio\/speech)$/,
   }
 });
 
+app.use(
+  cors({
+    credentials: true, // httpOnly cookie fd_session (auth) — web/server khác port
+    origin(origin, cb) {
+      // cb(null, false) = không set CORS headers → browser tự chặn request.
+      // (throw ở đây sẽ thành 500 JSON — header không được thêm khi đó.)
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      return cb(null, false);
+    },
+  }),
+);
+app.use(express.json({ limit: '5mb' }));
+
+// ---------- Auth: req.user từ fd_session cookie (null = anonymous) ----------
+app.use((req, _res, next) => {
+  req.user = null;
+  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  if (token) {
+    const row = db.prepare('SELECT * FROM auth_sessions WHERE token_hash = ?').get(sha256(token));
+    if (row && row.expires_at > Date.now()) {
+      req.user = db.prepare('SELECT id, username FROM users WHERE id = ?').get(row.user_id) || null;
+    }
+  }
+  next();
+});
+
+// user scope hiện tại: user đã login → id của họ; chưa login → '' (anonymous,
+// hành vi local-first như cũ — mọi thứ vẫn hoạt động không cần tài khoản).
+const scopeId = (req) => (req.user ? req.user.id : '');
+
+function setSessionCookie(res, token) {
+  res.setHeader(
+    'Set-Cookie',
+    `${SESSION_COOKIE}=${token}; HttpOnly; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}; SameSite=Lax`,
+  );
+}
+function clearSessionCookie(res) {
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`);
+}
+function createAuthSession(res, userId) {
+  const token = crypto.randomBytes(32).toString('hex');
+  db.prepare('INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)').run(
+    sha256(token),
+    userId,
+    Date.now(),
+    Date.now() + SESSION_TTL_MS,
+  );
+  setSessionCookie(res, token);
+}
+// Local-first merge-once: lần đầu login (hoặc đăng ký), toàn bộ data ẩn danh
+// (đã mirror từ localStorage trước đó) thuộc về user vừa đăng nhập.
+function adoptAnonymous(userId) {
+  for (const t of ['sessions', 'mistakes', 'vocab', 'tasks', 'progress_days']) {
+    db.prepare(`UPDATE ${t} SET user_id = ? WHERE user_id = ''`).run(userId);
+  }
+}
+// Local-first merge-once: lần đầu login (hoặc đăng ký), toàn bộ data ẩn danh
+// (đã mirror từ localStorage trước đó) thuộc về user vừa đăng nhập.
+function adoptAnonymous(userId) {
+  for (const t of ['sessions', 'mistakes', 'vocab', 'tasks', 'progress_days']) {
+    db.prepare(`UPDATE ${t} SET user_id = ? WHERE user_id = ''`).run(userId);
+  }
+}
+
+// ---------- Auth: register / login / logout / me ----------
+const valUsername = (v) => typeof v === 'string' && /^[a-zA-Z0-9_.-]{3,32}$/.test(v.trim());
+
+app.post('/api/auth/register', (req, res) => {
+  const b = req.body || {};
+  const username = typeof b.username === 'string' ? b.username.trim() : '';
+  const password = typeof b.password === 'string' ? b.password : '';
+  if (!valUsername(username)) return res.status(400).json({ error: 'username 3-32 ký tự (a-z, 0-9, _ . -)' });
+  if (typeof password !== 'string' || password.length < 6 || password.length > 200) {
+    return res.status(400).json({ error: 'password cần từ 6 đến 200 ký tự' });
+  }
+  if (db.prepare('SELECT id FROM users WHERE username = ?').get(username)) {
+    return res.status(409).json({ error: 'username đã tồn tại — chọn tên khác' });
+  }
+  const id = uid();
+  db.prepare('INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)').run(
+    id,
+    username,
+    hashPassword(password),
+    Date.now(),
+  );
+  adoptAnonymous(id); // dữ liệu local/trước đó của browser này → account mới
+  createAuthSession(res, id);
+  res.status(201).json({ user: { id, username } });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const b = req.body || {};
+  const username = typeof b.username === 'string' ? b.username.trim() : '';
+  const password = typeof b.password === 'string' ? b.password : '';
+  const user = valUsername(username)
+    ? db.prepare('SELECT * FROM users WHERE username = ?').get(username)
+    : null;
+  if (!user || !verifyPassword(password, user.password_hash)) {
+    return res.status(401).json({ error: 'username hoặc password không đúng' });
+  }
+  adoptAnonymous(user.id);
+  createAuthSession(res, user.id);
+  res.json({ user: { id: user.id, username: user.username } });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  if (token) db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(sha256(token));
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  res.json({ user: req.user ?? null });
+});
 const bool = (v) => (v ? 1 : 0);
 // Coerce user input to a finite integer; SQLite throws on NaN bindings.
 const intOr = (v, fallback) => {
@@ -127,8 +350,8 @@ app.get('/api/sessions', (req, res) => {
   // Clamp >= 1: limit=-1 trước đây thành SQLite LIMIT -1 (unbounded payload).
   const limit = Math.max(1, Math.min(intOr(req.query.limit, 100), 500));
   const sessions = db
-    .prepare('SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?')
-    .all(limit);
+    .prepare('SELECT * FROM sessions WHERE user_id = ? ORDER BY started_at DESC LIMIT ?')
+    .all(scopeId(req), limit);
   // Fetch all messages for the page in ONE query (keeps payload flat, avoids N+1).
   const messagesBySession = new Map();
   if (sessions.length > 0) {
@@ -200,8 +423,8 @@ app.post('/api/sessions', (req, res) => {
   const vocabPoints = Math.max(0, intOr(s.vocabPoints, 0));
   const confidence = Math.max(0, Math.min(intOr(s.confidence, 0), 100));
   const insSession = db.prepare(
-    `INSERT INTO sessions (id, mode, started_at, ended_at, duration_sec, turns, corrections, avg_score, vocab_points, confidence)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO sessions (user_id, id, mode, started_at, ended_at, duration_sec, turns, corrections, avg_score, vocab_points, confidence)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insMsg = db.prepare(
     `INSERT INTO messages (id, session_id, role, text, suggestion, wpm, filler_count, created_at)
@@ -212,6 +435,7 @@ app.post('/api/sessions', (req, res) => {
   db.exec('BEGIN');
   try {
     insSession.run(
+      scopeId(req),
       id,
       mode,
       startedAt,
@@ -240,17 +464,17 @@ app.delete('/api/sessions', (req, res) => {
   if (req.body?.confirm !== 'DELETE ALL') {
     return res.status(400).json({ error: 'confirm required', hint: 'send {"confirm":"DELETE ALL"}' });
   }
-  db.prepare('DELETE FROM messages').run();
-  db.prepare('DELETE FROM sessions').run();
+  db.prepare('DELETE FROM messages WHERE session_id IN (SELECT id FROM sessions WHERE user_id = ?)').run(scopeId(req));
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(scopeId(req));
   res.json({ ok: true });
 });
 
 // ---------- Mistakes ----------
-app.get('/api/mistakes', (_req, res) => {
+app.get('/api/mistakes', (req, res) => {
   res.json(
     db
-      .prepare('SELECT * FROM mistakes ORDER BY created_at DESC LIMIT 300')
-      .all()
+      .prepare('SELECT * FROM mistakes WHERE user_id = ? ORDER BY created_at DESC LIMIT 300')
+      .all(scopeId(req))
       .map((m) => ({
         id: m.id,
         original: m.original,
@@ -271,13 +495,16 @@ app.post('/api/mistakes', (req, res) => {
   const s = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
   const original = s(b.original, 2000);
   if (!original) return res.status(400).json({ error: 'original required' });
-  const existing = db.prepare('SELECT * FROM mistakes WHERE original = ?').get(original);
+  const existing = db
+    .prepare('SELECT * FROM mistakes WHERE user_id = ? AND original = ?')
+    .get(scopeId(req), original);
   if (existing) return res.json({ id: existing.id, deduped: true });
   const id = uid();
   db.prepare(
-    `INSERT INTO mistakes (id, original, corrected, alternative, explanation, mode, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO mistakes (user_id, id, original, corrected, alternative, explanation, mode, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
+    scopeId(req),
     id,
     original,
     s(b.corrected, 2000),
@@ -291,7 +518,9 @@ app.post('/api/mistakes', (req, res) => {
 
 app.patch('/api/mistakes/:id', (req, res) => {
   const b = req.body || {};
-  const cur = db.prepare('SELECT * FROM mistakes WHERE id = ?').get(req.params.id);
+  const cur = db
+    .prepare('SELECT * FROM mistakes WHERE id = ? AND user_id = ?')
+    .get(req.params.id, scopeId(req));
   if (!cur) return res.status(404).json({ error: 'not found' });
   // Clamp reviewCount (0..10000): giá trị âm/huge từ client làm hỏng lịch SRS.
   let reviewCount = cur.review_count;
@@ -310,16 +539,16 @@ app.patch('/api/mistakes/:id', (req, res) => {
 });
 
 app.delete('/api/mistakes/:id', (req, res) => {
-  db.prepare('DELETE FROM mistakes WHERE id = ?').run(req.params.id);
+  db.prepare('DELETE FROM mistakes WHERE id = ? AND user_id = ?').run(req.params.id, scopeId(req));
   res.json({ ok: true });
 });
 
 // ---------- Vocab ----------
-app.get('/api/vocab', (_req, res) => {
+app.get('/api/vocab', (req, res) => {
   res.json(
     db
-      .prepare('SELECT * FROM vocab ORDER BY created_at DESC LIMIT 500')
-      .all()
+      .prepare('SELECT * FROM vocab WHERE user_id = ? ORDER BY created_at DESC LIMIT 500')
+      .all(scopeId(req))
       .map((v) => ({
         id: v.id,
         word: v.word,
@@ -335,13 +564,16 @@ app.get('/api/vocab', (_req, res) => {
 app.post('/api/vocab', (req, res) => {
   const b = req.body || {};
   if (typeof b.word !== 'string' || !b.word.trim()) return res.status(400).json({ error: 'word required' });
-  const existing = db.prepare('SELECT * FROM vocab WHERE word = ?').get(b.word.toLowerCase());
+  const existing = db
+    .prepare('SELECT * FROM vocab WHERE user_id = ? AND word = ?')
+    .get(scopeId(req), b.word.toLowerCase());
   if (existing) return res.json({ id: existing.id, deduped: true });
   const id = uid();
   db.prepare(
-    `INSERT INTO vocab (id, word, translation, ipa, example, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO vocab (user_id, id, word, translation, ipa, example, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   ).run(
+    scopeId(req),
     id,
     b.word.toLowerCase().slice(0, 60),
     typeof b.translation === 'string' ? b.translation.slice(0, 200) : '',
@@ -353,16 +585,16 @@ app.post('/api/vocab', (req, res) => {
 });
 
 app.delete('/api/vocab/:id', (req, res) => {
-  db.prepare('DELETE FROM vocab WHERE id = ?').run(req.params.id);
+  db.prepare('DELETE FROM vocab WHERE id = ? AND user_id = ?').run(req.params.id, scopeId(req));
   res.json({ ok: true });
 });
 
 // ---------- Tasks (practice checklist do user tự đăng ký) ----------
-app.get('/api/tasks', (_req, res) => {
+app.get('/api/tasks', (req, res) => {
   res.json(
     db
-      .prepare('SELECT * FROM tasks ORDER BY completed ASC, created_at DESC LIMIT 200')
-      .all()
+      .prepare('SELECT * FROM tasks WHERE user_id = ? ORDER BY completed ASC, created_at DESC LIMIT 200')
+      .all(scopeId(req))
       .map((t) => ({
         id: t.id,
         title: t.title,
@@ -385,15 +617,16 @@ app.post('/api/tasks', (req, res) => {
   const dueAt = Number.isFinite(due) && due > 946_684_800_000 && due < 4_102_444_800_000 ? Math.trunc(due) : null;
   const id = uid();
   db.prepare(
-    `INSERT INTO tasks (id, title, description, due_at, created_at) VALUES (?, ?, ?, ?, ?)`,
-  ).run(id, b.title.trim().slice(0, 300), typeof b.description === 'string' ? b.description.slice(0, 2000) : '', dueAt, Date.now());
+    `INSERT INTO tasks (user_id, id, title, description, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(scopeId(req), id, b.title.trim().slice(0, 300), typeof b.description === 'string' ? b.description.slice(0, 2000) : '', dueAt, Date.now());
   res.status(201).json({ id });
 });
 
 app.patch('/api/tasks/:id', (req, res) => {
   const b = req.body || {};
-  const cur = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
-  if (!cur) return res.status(404).json({ error: 'not found' });
+  const cur = db
+    .prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?')
+    .get(req.params.id, scopeId(req));
   const completed = typeof b.completed === 'boolean' ? bool(b.completed) : !!cur.completed;
   db.prepare('UPDATE tasks SET completed = ?, completed_at = ? WHERE id = ?').run(
     bool(completed),
@@ -404,16 +637,16 @@ app.patch('/api/tasks/:id', (req, res) => {
 });
 
 app.delete('/api/tasks/:id', (req, res) => {
-  db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
+  db.prepare('DELETE FROM tasks WHERE id = ? AND user_id = ?').run(req.params.id, scopeId(req));
   res.json({ ok: true });
 });
 
 // ---------- Progress ----------
-app.get('/api/progress', (_req, res) => {
+app.get('/api/progress', (req, res) => {
   res.json(
     db
-      .prepare('SELECT * FROM progress_days ORDER BY date DESC LIMIT 90')
-      .all()
+      .prepare('SELECT * FROM progress_days WHERE user_id = ? ORDER BY date DESC LIMIT 90')
+      .all(scopeId(req))
       .map((d) => ({ date: d.date, sessions: d.sessions, minutes: d.minutes, xp: d.xp })),
   );
 });
@@ -424,23 +657,24 @@ app.post('/api/progress/log', (req, res) => {
   // vào progress → XP/streak poisoning.
   const durationSec = Math.max(0, Math.min(intOr(b.durationSec, 0), 24 * 3600));
   const xp = Math.max(0, Math.min(intOr(b.xp, 0), 10_000));
+  const userScope = scopeId(req);
   const date = new Date();
   // Local date (not UTC): user ở VN (UTC+7) học buổi sáng sớm phải tính vào
   // đúng ngày hôm nay của họ, không phải hôm trước theo UTC.
   const dateKey = localDateKey(date);
-  const cur = db.prepare('SELECT * FROM progress_days WHERE date = ?').get(dateKey);
+  const cur = db
+    .prepare('SELECT * FROM progress_days WHERE user_id = ? AND date = ?')
+    .get(userScope, dateKey);
   if (cur) {
     db.prepare(
-      'UPDATE progress_days SET sessions = sessions + 1, minutes = minutes + ?, xp = xp + ? WHERE date = ?',
-    ).run(Math.round(durationSec / 60), xp, dateKey);
+      'UPDATE progress_days SET sessions = sessions + 1, minutes = minutes + ?, xp = xp + ? WHERE user_id = ? AND date = ?',
+    ).run(Math.round(durationSec / 60), xp, userScope, dateKey);
   } else {
-    db.prepare('INSERT INTO progress_days (date, sessions, minutes, xp) VALUES (?, 1, ?, ?)').run(
-      dateKey,
-      Math.round(durationSec / 60),
-      xp,
-    );
+    db.prepare(
+      'INSERT INTO progress_days (user_id, date, sessions, minutes, xp) VALUES (?, ?, 1, ?, ?)',
+    ).run(userScope, dateKey, Math.round(durationSec / 60), xp);
   }
-  const days = db.prepare('SELECT * FROM progress_days ORDER BY date DESC LIMIT 90').all();
+  const days = db.prepare('SELECT * FROM progress_days WHERE user_id = ? ORDER BY date DESC LIMIT 90').all(userScope);
   const set = new Set(days.map((d) => d.date));
   const key = localDateKey;
   let streak = 0;

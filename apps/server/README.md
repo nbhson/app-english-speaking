@@ -1,12 +1,14 @@
 # @fluentdev/library-api
 
 Local-first storage backend for FluentDev's 📚 My Learning Library.
-Express + SQLite via Node's built-in `node:sqlite` (no native deps, no auth).
+Express + SQLite via Node's built-in `node:sqlite` (no native deps).
 
 > Yêu cầu **Node.js ≥ 22** (`node:sqlite` chỉ có từ Node 22.5+).
 
 - DB file: `<repo>/data/fluentdev.db` (auto-created, gitignored — override with `DB_PATH`)
-- Schema: `schema.sql` (`sessions` + `messages`, `mistakes`, `vocab`, `progress_days`)
+- Schema: `schema.sql` (`users` + `auth_sessions`, và các bảng data
+  `sessions` + `messages`, `mistakes`, `vocab`, `tasks`, `progress_days` —
+  đều có cột `user_id`)
 
 ```bash
 npm run dev      # watch mode, :8241
@@ -15,9 +17,27 @@ PORT=8241 DB_PATH=/tmp/x.db npm start
 ```
 
 API: `GET /api/health`, CRUD under `/api/sessions`, `/api/mistakes`,
-`/api/vocab`, plus `GET /api/progress` and `POST /api/progress/log`.
-The web app (`apps/web`) writes through to this API when reachable and
-falls back to localStorage otherwise.
+`/api/vocab`, `/api/tasks`, plus `GET /api/progress` and
+`POST /api/progress/log`. The web app (`apps/web`) writes through to this
+API when reachable and falls back to localStorage otherwise.
+
+## Auth (đơn giản, local-first giữ nguyên)
+
+Login = username + password (`node:crypto` scrypt), session = token ngẫu
+nhiên 32 bytes trong httpOnly cookie `fd_session` (SameSite=Lax, 30 ngày);
+DB chỉ lưu `sha256(token)`. Không email verify / OAuth / reset password.
+
+- `POST /api/auth/register` — `{ username, password }` → tạo user + cookie
+- `POST /api/auth/login` — `{ username, password }` → cookie session
+- `POST /api/auth/logout` — xóa session hiện tại
+- `GET  /api/auth/me` — `{ user }` (null khi anonymous)
+
+**Local-first vẫn là mặc định:** chưa đăng nhập thì mọi API hoạt động như cũ
+(data scope `user_id = ''` — anonymous). Lần đầu đăng nhập/đăng ký, toàn bộ
+data ẩn danh của browser được "adopt" vào account (`adoptAnonymous`) — merge
+một lần, không mất dữ liệu. Sau đó mọi bảng được scoping theo `user_id`, mỗi
+user chỉ thấy library của mình. DB cũ được migration tự động (thêm cột
+`user_id`, rebuild unique constraints cho mistakes/vocab/progress_days).
 
 ## AI provider proxy
 

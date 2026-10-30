@@ -23,12 +23,17 @@ const BASE = LIBRARY_API_URL;
 let available: boolean | null = null;
 let availableAt = 0;
 
+// Web (:8240) → server (:8241) là cross-origin: mọi fetch cần
+// credentials: 'include' để cookie httpOnly fd_session đi kèm — server scoping
+// data theo user; chưa login thì cookie không có, hành vi anonymous như cũ.
+const CRED: RequestCredentials = 'include';
+
 export async function serverAvailable(): Promise<boolean> {
   if (available !== null && Date.now() - availableAt < 15000) return available;
   try {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 1500);
-    const r = await fetch(`${BASE}/api/health`, { signal: ctl.signal });
+    const r = await fetch(`${BASE}/api/health`, { signal: ctl.signal, credentials: CRED });
     clearTimeout(t);
     available = r.ok;
   } catch {
@@ -41,6 +46,7 @@ export async function serverAvailable(): Promise<boolean> {
 async function post(path: string, body: unknown): Promise<Response> {
   return fetch(`${BASE}${path}`, {
     method: 'POST',
+    credentials: CRED,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
@@ -95,6 +101,7 @@ async function sendOp(op: PendingOp): Promise<boolean> {
   try {
     const r = await fetch(`${BASE}${op.path}`, {
       method: op.method,
+      credentials: CRED,
       headers: { 'Content-Type': 'application/json' },
       body: op.body === undefined ? undefined : JSON.stringify(op.body),
     });
@@ -203,7 +210,7 @@ export function mirrorProgress(durationSec: number, xp: number): Promise<number 
 export async function fetchSessions(): Promise<{ list: SessionRecord[]; remote: boolean }> {
   if (await serverAvailable()) {
     try {
-      const r = await fetch(`${BASE}/api/sessions?limit=100`);
+      const r = await fetch(`${BASE}/api/sessions?limit=100`, { credentials: CRED });
       if (r.ok) return { list: (await r.json()) as SessionRecord[], remote: true };
     } catch {
       /* fall through */
@@ -215,7 +222,7 @@ export async function fetchSessions(): Promise<{ list: SessionRecord[]; remote: 
 export async function fetchMistakes(): Promise<{ list: MistakeEntry[]; remote: boolean }> {
   if (await serverAvailable()) {
     try {
-      const r = await fetch(`${BASE}/api/mistakes`);
+      const r = await fetch(`${BASE}/api/mistakes`, { credentials: CRED });
       if (r.ok) {
         const remote = (await r.json()) as MistakeEntry[];
         // SRS schedule is local-only (server schema has no nextReview) — merge it back.
@@ -240,7 +247,7 @@ export async function fetchMistakes(): Promise<{ list: MistakeEntry[]; remote: b
 export async function fetchVocab(): Promise<{ list: VocabEntry[]; remote: boolean }> {
   if (await serverAvailable()) {
     try {
-      const r = await fetch(`${BASE}/api/vocab`);
+      const r = await fetch(`${BASE}/api/vocab`, { credentials: CRED });
       if (r.ok) {
         const remote = (await r.json()) as VocabEntry[];
         const local = getVocab();
@@ -264,7 +271,7 @@ export async function fetchVocab(): Promise<{ list: VocabEntry[]; remote: boolea
 export async function fetchProgress(): Promise<{ list: ProgressDay[]; remote: boolean }> {
   if (await serverAvailable()) {
     try {
-      const r = await fetch(`${BASE}/api/progress`);
+      const r = await fetch(`${BASE}/api/progress`, { credentials: CRED });
       if (r.ok) return { list: (await r.json()) as ProgressDay[], remote: true };
     } catch {
       /* fall through */
@@ -276,7 +283,7 @@ export async function fetchProgress(): Promise<{ list: ProgressDay[]; remote: bo
 export async function fetchTasks(): Promise<{ list: TaskEntry[]; remote: boolean }> {
   if (await serverAvailable()) {
     try {
-      const r = await fetch(`${BASE}/api/tasks`);
+      const r = await fetch(`${BASE}/api/tasks`, { credentials: CRED });
       if (r.ok) return { list: (await r.json()) as TaskEntry[], remote: true };
     } catch {
       /* fall through */
@@ -290,10 +297,10 @@ export async function migrateLocalToServer(): Promise<boolean> {
   if (!(await serverAvailable())) return false;
   try {
     const [sessions, mistakes, vocab, tasks] = await Promise.all([
-      fetch(`${BASE}/api/sessions?limit=1`).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${BASE}/api/mistakes`).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${BASE}/api/vocab`).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${BASE}/api/tasks`).then((r) => (r.ok ? r.json() : [])),
+      fetch(`${BASE}/api/sessions?limit=1`, { credentials: CRED }).then((r) => (r.ok ? r.json() : [])),
+      fetch(`${BASE}/api/mistakes`, { credentials: CRED }).then((r) => (r.ok ? r.json() : [])),
+      fetch(`${BASE}/api/vocab`, { credentials: CRED }).then((r) => (r.ok ? r.json() : [])),
+      fetch(`${BASE}/api/tasks`, { credentials: CRED }).then((r) => (r.ok ? r.json() : [])),
     ]);
     if (sessions.length > 0 || mistakes.length > 0 || vocab.length > 0 || tasks.length > 0) return false;
     const localSessions = getSessions();

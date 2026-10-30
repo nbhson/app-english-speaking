@@ -22,6 +22,9 @@ const LibraryPanel = React.lazy(() =>
 const SettingsModal = React.lazy(() =>
   import('./components/SettingsModal').then((mod) => ({ default: mod.SettingsModal })),
 );
+const AuthModal = React.lazy(() =>
+  import('./components/AuthModal').then((mod) => ({ default: mod.AuthModal })),
+);
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { SelectionTranslator } from './components/SelectionTranslator';
@@ -38,7 +41,8 @@ import {
   saveSession, addMistake, logSessionProgress,
   getStreak, totalXP, transcriptToMarkdown, downloadText,
 } from './utils/storage';
-import { mirrorSession, mirrorMistake, mirrorProgress } from './utils/serverStore';
+import { mirrorSession, mirrorMistake, mirrorProgress, migrateLocalToServer } from './utils/serverStore';
+import { cachedUser, fetchMe, logout, type AuthUser } from './utils/auth';
 import { uid } from './utils/uid';
 import { loadUiPrefs, saveUiPrefs } from './utils/uiPrefs';
 import {
@@ -67,6 +71,11 @@ const App: React.FC = () => {
   const [config, setConfig] = useState<AIConfig>(() => loadConfig());
   const [showSettings, setShowSettings] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  // Auth: cache username cho UI render ngay; fetchMe() xác nhận với server
+  // (cookie fd_session là source of truth). null = anonymous — app vẫn chạy
+  // local-first như cũ.
+  const [authUser, setAuthUser] = useState<AuthUser | null>(() => cachedUser());
+  const [showAuthModal, setShowAuthModal] = useState(false);
   // One-time notice for pre-proxy users: a plaintext API key was found in
   // localStorage — offer the server-proxy switch (never switch silently).
   // Lazy initializer (not an effect): avoids a sync setState in effect.
@@ -210,6 +219,34 @@ const App: React.FC = () => {
   useEffect(() => { transcriptionsRef.current = transcriptions; }, [transcriptions]);
   useEffect(() => { customTopicRef.current = customTopic; }, [customTopic]);
   useEffect(() => { scenarioRef.current = scenarioId; }, [scenarioId]);
+
+  // Auth boot: hỏi server session hiện tại (cookie). Không chặn render — UI
+  // dùng cachedUser() trước, fetchMe() chỉ cập nhật username/đăng xuất cache.
+  useEffect(() => {
+    let alive = true;
+    void fetchMe().then((u) => {
+      if (alive) setAuthUser(u);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const handleSignedIn = (username: string) => {
+    setShowAuthModal(false);
+    setAuthUser(cachedUser());
+    // Merge-once: đẩy data localStorage vào account vừa đăng nhập (server đã
+    // adopt data ẩn danh trước đó; migrate chỉ push phần chưa có trên server).
+    void migrateLocalToServer();
+    setAnnounce(`Đã đăng nhập — ${username}`);
+  };
+
+  const handleSignOut = () => {
+    void logout().then(() => {
+      setAuthUser(null);
+      setAnnounce('Đã đăng xuất — dữ liệu mới chỉ lưu trên máy này');
+    });
+  };
 
   useEffect(() => {
     autoListenRef.current = autoListen;
@@ -730,17 +767,20 @@ const App: React.FC = () => {
           onOpenSettings={() => setShowSettings(true)}
           onOpenLibrary={() => setShowLibrary(true)}
           refreshSignal={libraryEpoch}
+          authUser={authUser}
+          onSignIn={() => setShowAuthModal(true)}
+          onSignOut={handleSignOut}
         />
         <SelectionTranslator config={config} />
         {!browserSTT && (
-          <div className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 text-amber-700 dark:text-amber-300 rounded-2xl px-4 py-2.5" role="alert" lang="vi">
+          <div className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 text-amber-700 dark:text-amber-300 rounded-lg px-4 py-2.5" role="alert" lang="vi">
             <TriangleAlert size={14} className="mt-0.5 shrink-0" />
             <span>Trình duyệt này không hỗ trợ Web Speech (Safari/Firefox). Hãy chuyển STT → Custom Provider trong Settings để dùng nút Hold-to-Speak, hoặc gõ text phía dưới — app vẫn học bình thường.</span>
           </div>
         )}
         {/* One-time proxy migration offer for legacy BYOK users. */}
         {proxyNotice && (
-          <div className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 text-blue-700 dark:text-blue-300 rounded-2xl px-4 py-2.5" role="status" lang="vi">
+          <div className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 text-blue-700 dark:text-blue-300 rounded-lg px-4 py-2.5" role="status" lang="vi">
             <ShieldCheck size={14} className="mt-0.5 shrink-0" />
             <span className="flex-1">API key của bạn đang lưu plaintext trong browser. Chuyển sang server proxy — key nằm ở server env, không còn trong localStorage? (Direct BYOK vẫn giữ nguyên nếu từ chối.)</span>
             <button
@@ -764,7 +804,7 @@ const App: React.FC = () => {
             active, so without this banner the user would never see the error. */}
         {session.isActive && startError && (
           <div
-            className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 text-red-700 dark:text-red-300 rounded-2xl px-4 py-2.5"
+            className="mx-4 md:mx-6 mt-3 flex items-start gap-2 text-xs bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 text-red-700 dark:text-red-300 rounded-lg px-4 py-2.5"
             role="alert"
             lang="vi"
           >
@@ -788,7 +828,7 @@ const App: React.FC = () => {
                 initial={{ width: 0, opacity: 0, x: -20 }}
                 animate={{ width: 280, opacity: 1, x: 0 }}
                 exit={{ width: 0, opacity: 0, x: -20 }}
-                className="hidden md:flex flex-col shrink-0 overflow-hidden bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm"
+                className="hidden md:flex flex-col shrink-0 overflow-hidden bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800"
                 aria-label="Desktop practice modes"
               >
                 <div className="w-[280px] flex flex-col h-full">
@@ -796,7 +836,7 @@ const App: React.FC = () => {
                     <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Modes</span>
                     <button
                       onClick={() => setShowSidebar(false)}
-                      className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
                       aria-label="Collapse practice modes"
                       title="Collapse practice modes"
                     >
@@ -847,14 +887,15 @@ const App: React.FC = () => {
           </AnimatePresence>
 
           {/* Chat / Interaction Area */}
-          <section className="flex-1 flex flex-col min-h-0 bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors min-w-0">
+          <section className="flex-1 flex flex-col min-h-0 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden transition-colors min-w-0" data-tour-id="chat-panel">
             <div className="flex items-center gap-2 px-2 sm:px-3 py-2 border-b border-slate-100 dark:border-slate-800 shrink-0">
               <button
                 onClick={() => {
                   if (window.innerWidth < 768) setIsMobileSidebarOpen(true);
                   else setShowSidebar(true);
                 }}
-                className={`h-9 flex items-center gap-1.5 px-2.5 rounded-xl border text-xs font-bold transition-all ${(showSidebar || isMobileSidebarOpen) ? 'invisible w-0 px-0 overflow-hidden border-transparent' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                className={`h-9 flex items-center gap-1.5 px-2.5 rounded-lg border text-xs font-bold transition-all ${(showSidebar || isMobileSidebarOpen) ? 'invisible w-0 px-0 overflow-hidden border-transparent' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                data-tour-id="modes-btn"
                 aria-label="Show practice modes"
                 title="Show practice modes"
                 tabIndex={(showSidebar || isMobileSidebarOpen) ? -1 : 0}
@@ -869,7 +910,7 @@ const App: React.FC = () => {
               </div>
               <button
                 onClick={() => setShowAssessment(true)}
-                className={`h-9 hidden lg:flex items-center gap-1.5 px-2.5 rounded-xl border text-xs font-bold transition-all ${showAssessment ? 'invisible w-0 px-0 overflow-hidden border-transparent' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                className={`h-9 hidden lg:flex items-center gap-1.5 px-2.5 rounded-lg border text-xs font-bold transition-all ${showAssessment ? 'invisible w-0 px-0 overflow-hidden border-transparent' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
                 aria-label="Show assessment"
                 title="Show assessment panel"
                 tabIndex={showAssessment ? -1 : 0}
@@ -910,7 +951,7 @@ const App: React.FC = () => {
                 coachLabel={MODE_CONFIGS[session.mode].coachRole}
                 intro={
                   transcriptions.length === 0 && session.isActive ? (
-                    <div className={`rounded-2xl border px-4 py-3 text-xs ${MODE_CONFIGS[session.mode].accent}`} lang="vi">
+                    <div className={`rounded-lg border px-4 py-3 text-xs ${MODE_CONFIGS[session.mode].accent}`} lang="vi">
                       <span className="font-bold">{MODE_CONFIGS[session.mode].coachRole}: </span>
                       {MODE_CONFIGS[session.mode].scenarios?.find((s) => s.id === scenarioId)?.setup ?? MODE_CONFIGS[session.mode].description}
                       {session.mode === AppMode.CUSTOM && customTopic ? ` · Topic: ${customTopic}` : ''}
@@ -960,7 +1001,8 @@ const App: React.FC = () => {
                 initial={{ width: 0, opacity: 0, x: 20 }}
                 animate={{ width: 420, opacity: 1, x: 0 }}
                 exit={{ width: 0, opacity: 0, x: 20 }}
-                className="hidden lg:flex flex-col shrink-0 overflow-hidden bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm"
+                className="hidden lg:flex flex-col shrink-0 overflow-hidden bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800"
+                data-tour-id="assessment-panel"
                 aria-label="Assessment panel"
               >
                 <div className="w-[420px] flex flex-col h-full">
@@ -968,7 +1010,7 @@ const App: React.FC = () => {
                     <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Assessment</span>
                     <button
                       onClick={() => setShowAssessment(false)}
-                      className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
                       aria-label="Collapse assessment panel"
                       title="Collapse assessment panel"
                     >
@@ -992,10 +1034,10 @@ const App: React.FC = () => {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 300, opacity: 0 }}
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="lg:hidden fixed bottom-0 left-0 right-0 max-h-[55dvh] overflow-y-auto overscroll-contain bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-t-3xl shadow-2xl z-20 px-3 pt-2 pb-[env(safe-area-inset-bottom)]"
+              className="lg:hidden fixed bottom-0 left-0 right-0 max-h-[55dvh] overflow-y-auto overscroll-contain bg-white dark:bg-slate-900/85 dark:backdrop-blur-xl border-t border-slate-200 dark:border-slate-800 rounded-t-3xl shadow-2xl z-20 px-3 pt-2 pb-[env(safe-area-inset-bottom)]"
               aria-label="Mobile assessment"
             >
-              <div className="sticky top-0 bg-white dark:bg-slate-900 pt-1 pb-2 z-10">
+              <div className="sticky top-0 bg-white dark:bg-slate-900/85 dark:backdrop-blur-xl pt-1 pb-2 z-10">
                 <div className="mx-auto w-10 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 mb-1" aria-hidden />
                 <div className="flex items-center justify-between px-1">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">📊 Assessment</span>
@@ -1034,6 +1076,11 @@ const App: React.FC = () => {
               onSaved={(cfg) => setConfig(cfg)}
               onReplayTour={() => { setShowSettings(false); setShowTour(true); }}
             />
+          </Suspense>
+        )}
+        {showAuthModal && (
+          <Suspense fallback={null}>
+            <AuthModal onClose={() => setShowAuthModal(false)} onSignedIn={handleSignedIn} />
           </Suspense>
         )}
         {showLibrary && <Suspense fallback={null}><LibraryPanel config={config} onClose={() => { setShowLibrary(false); setStreak(getStreak()); setXp(totalXP()); setLibraryEpoch((v) => v + 1); }} onPractice={(mode, prefill) => {
