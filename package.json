@@ -12,7 +12,8 @@
     "dev:web": "npm run dev --workspace=ai-english-speaking-coach",
     "dev:server": "npm run dev --workspace=@fluentdev/library-api",
     "build": "npm run build --workspace=ai-english-speaking-coach",
-    "test": "npm run test --workspace=ai-english-speaking-coach"
+    "test": "npm run test --workspace=ai-english-speaking-coach",
+    "lint": "npm run lint --workspace=ai-english-speaking-coach"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

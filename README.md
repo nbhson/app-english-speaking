@@ -1,6 +1,8 @@
 
 # FluentDev — monorepo
 
+[![CI](https://github.com/nbhson/app-english-speaking/actions/workflows/ci.yml/badge.svg)](https://github.com/nbhson/app-english-speaking/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 AI English Speaking Coach cho developers: luyện nói (Daily / Meeting / Presentation /
 Custom Class / VN→EN / Roleplay) qua voice turn-based với AI Coach.
 
