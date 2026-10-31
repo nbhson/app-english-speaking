@@ -32,3 +32,5 @@ migrated_prompt_history/
 *.njsproj
 *.sln
 *.sw?
+.scoderrc.json
+.scoder/
