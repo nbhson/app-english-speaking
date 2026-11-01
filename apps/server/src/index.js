@@ -176,14 +176,15 @@ app.use(
     },
   }),
 );
+// Raw-body parser scoped to /api/ai — MUST be mounted before express.json so
+// multipart audio uploads aren't consumed and JSON bodies stay byte-exact
+// when passed through to the upstream. (Ordering is critical: if express.json
+// runs first it consumes the request stream, and the proxy below then forwards
+// an EMPTY body to the AI upstream.)
+app.use('/api/ai', express.raw({ type: () => true, limit: '25mb' }));
 app.use(express.json({ limit: '5mb' }));
 
 // ---------- AI proxy ----------
-// Raw-body parser scoped to /api/ai — MUST be mounted before express.json so
-// multipart audio uploads aren't consumed and JSON bodies stay byte-exact
-// when passed through to the upstream.
-app.use('/api/ai', express.raw({ type: () => true, limit: '25mb' }));
-
 // Optional client→proxy auth: only enforced when AI_PROXY_TOKEN is set.
 // GET /api/ai/status stays open — it's a readiness probe for the Settings UI
 // and reveals nothing but a boolean.
