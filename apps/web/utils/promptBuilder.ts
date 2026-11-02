@@ -3,16 +3,24 @@
 // persona + mode snippet + scenario + custom topic.
 
 import { AppMode } from '../types';
+import type { MistakeEntry } from '../types';
 import type { AIConfig } from './api';
 import { SYSTEM_INSTRUCTION, DIFFICULTY_PROMPT, PERSONA_PROMPT } from '../constants';
 import { MODE_CONFIGS, MODE_PROMPT_SNIPPET } from '../modes';
 
-/** Full system prompt cho một turn chat (mode/scenario/topic đọc từ refs). */
+/** Max SRS items injected into a Review Class system prompt (keeps it compact). */
+const REVIEW_DECK_CAP = 8;
+
+/**
+ * Full system prompt cho một turn chat (mode/scenario/topic đọc từ refs).
+ * reviewDrills: deck SRS cho REVIEW mode (được App chuẩn bị khi start session).
+ */
 export function buildSystemPrompt(
   cfg: AIConfig,
   mode: AppMode,
   scenarioId: string,
-  customTopic: string
+  customTopic: string,
+  reviewDrills?: MistakeEntry[]
 ): string {
   if (cfg.systemPromptOverride?.trim()) return cfg.systemPromptOverride;
   const extra = `\n\nSTUDENT LEVEL: ${DIFFICULTY_PROMPT[cfg.difficulty ?? 'intermediate']}\nCOACH TONE: ${PERSONA_PROMPT[cfg.persona ?? 'encouraging']}`;
@@ -23,12 +31,27 @@ export function buildSystemPrompt(
     mode === AppMode.CUSTOM && customTopic.trim()
       ? `\nLESSON TOPIC (CLASSROOM — STRICT, DO NOT DIGRESS): ${customTopic.trim()}\nYou are the TEACHER for this lesson. Open by confirming the topic + asking ONE level/goal check, then loop: teach ONE micro-point → 2 examples → ONE drill task → detailed correction. Stay 100% on this topic.`
       : '';
+  const reviewLine =
+    mode === AppMode.REVIEW && reviewDrills
+      ? `\nREVIEW DECK (${Math.min(reviewDrills.length, REVIEW_DECK_CAP)} saved corrections, most overdue first — drill these ONE by ONE):\n` +
+        (reviewDrills.length
+          ? reviewDrills
+              .slice(0, REVIEW_DECK_CAP)
+              .map(
+                (m, i) =>
+                  `${i + 1}. "${m.original}" → "${m.corrected}"${m.explanation ? ` — rule: ${m.explanation}` : ''}`
+              )
+              .join('\n')
+          : 'The deck is empty. Fall back to re-drilling the mistakes from THIS conversation, or common Vietnamese-learner pitfalls (articles, tenses, countable nouns).') +
+        '\nWork through the deck IN ORDER. Ask the student to produce NEW sentences (fresh context) for each item; judge recall, re-teach briefly when needed.'
+      : '';
   return (
     SYSTEM_INSTRUCTION +
     extra +
     `\n\nCURRENT MODE: ${mode}\nMODE BEHAVIOR: ${modeSnippet}` +
     scenarioLine +
-    customLine
+    customLine +
+    reviewLine
   );
 }
 
@@ -41,6 +64,8 @@ export function finishPrompt(mode: AppMode): string {
       return 'The presentation is over. Provide [Assessment], then report: structure score, pace (use WPM if observable), filler words, 1 signposting tip, plus ONE tough Q&A question to practice next. Say goodbye.';
     case AppMode.CUSTOM:
       return 'The lesson is over. Provide [Assessment], then give a 3-question mini-quiz on the lesson topic for homework plus a 2-sentence recap. Say goodbye.';
+    case AppMode.REVIEW:
+      return 'The review class is over. Provide [Assessment], then report which drill items the student self-corrected (good recall) vs still re-drilled (needs work), each in one line, plus ONE concrete step for the next review. Say goodbye.';
     case AppMode.TRANSLATE:
       return 'Session over. Provide [Assessment], then list the 3 most useful natural phrasings we learned with 1-line nuance each. Say goodbye.';
     default:

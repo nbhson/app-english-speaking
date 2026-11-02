@@ -143,6 +143,19 @@ export const MODE_CONFIGS: Record<AppMode, ModeConfig> = {
     rubric: 'Trả 2-3 options: Natural (khuyên dùng) / Casual / Formal + 1 dòng nuance tiếng Việt. Luôn hỏi 1 câu chốt.',
     tip: 'Nói hoặc gõ tiếng Việt đều được — thêm context: "nói với sếp" / "nhắn bạn" để dịch chuẩn hơn.',
   },
+  [AppMode.REVIEW]: {
+    mode: AppMode.REVIEW,
+    title: 'Review Class',
+    tagline: 'Ôn lỗi đã lưu qua drill',
+    description: 'Lớp 1-1 drill lại các lỗi AI đã lưu: tự đặt câu MỚI với cấu trúc cũ, tự sửa, AI chấm recall + nhắc quy tắc lúc quên.',
+    accent: 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800/40 text-teal-700 dark:text-teal-300',
+    dot: 'bg-teal-500',
+    coachRole: 'Drill Teacher',
+    skills: ['Recall', 'Accuracy', 'Retention'],
+    starters: [],
+    rubric: 'Judge recall, not theory: student tự đặt câu đúng = "self-corrected". Lặp lại lỗi cũ → re-teach 1 quy tắc ngắn + drill lại ngay.',
+    tip: 'Nói câu MỚI, đừng đọc lại câu gốc — đổi context để thực sự nhớ.',
+  },
   [AppMode.ROLEPLAY]: {
     mode: AppMode.ROLEPLAY,
     title: 'Roleplay Scenario',
@@ -176,5 +189,6 @@ export const MODE_PROMPT_SNIPPET: Record<AppMode, string> = {
   [AppMode.PRESENTATION]: `STAGE COACH: Coach presentation structure (Hook → 3 points → Close), signposting, pace. Ideal pace 130-160 WPM. Call out fillers specifically. In Q&A stage ask ONE tough question per turn.`,
   [AppMode.CUSTOM]: `CLASSROOM TEACHER: Teach ONE micro-point per turn: formula → 2 quoted examples → ONE drill task. Correct in detail with formula reminder + common VN-learner mistake. End every turn with ONE task. Final assessment must include a 3-question mini-quiz.`,
   [AppMode.TRANSLATE]: `CONTEXT TRANSLATOR: Give 2-3 English options (⭐ Natural / Casual / Formal) in quotes + 1-line Vietnamese nuance each. Keep it short. End with at most ONE brief follow-up. Respond in Vietnamese, English only inside quotes.`,
+  [AppMode.REVIEW]: `REVIEW CLASS: Re-drill the student's saved corrections from the REVIEW DECK, ONE item at a time. Your job is to judge recall: prompt the student to produce 1-2 NEW sentences using the target pattern in a fresh context (never reuse the original sentence). If they produce it well or self-correct → praise briefly, move to the next item. If they repeat the old mistake → give ONE memorable rule + ONE example, re-drill immediately. Keep each turn under 4 sentences, end EVERY turn with exactly ONE task, and always emit [Correction] blocks for errors.`,
   [AppMode.ROLEPLAY]: `ROLEPLAY ACTOR: Stay 100% in character for the whole scene — react the way the character would, never break character, never explain that you are an AI. Keep replies short and spoken (1-3 sentences), ask or push like the character would, and WAIT for the student. Still emit [Correction] blocks for impactful errors (the app hides them from the scene). Only in the FINAL assessment turn, break character briefly: give scene feedback (what worked, what to say differently) in 2-3 sentences.`,
 };

@@ -6,6 +6,7 @@ export enum AppMode {
   CUSTOM = 'custom',
   TRANSLATE = 'translate',
   ROLEPLAY = 'roleplay',
+  REVIEW = 'review',
 }
 
 export type Difficulty = 'beginner' | 'intermediate' | 'advanced';

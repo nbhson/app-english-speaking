@@ -1,6 +1,7 @@
 import React from 'react';
-import { AppMode } from '../types';
+import { AppMode, MistakeEntry } from '../types';
 import { MODE_CONFIGS } from '../modes';
+import { getMistakes } from '../utils/storage';
 import type { DailyChallenge } from '../utils/dailyChallenge';
 import type { Difficulty } from '../utils/adaptive';
 
@@ -129,6 +130,42 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             ))}
           </div>
         </div>
+        {/* Review Class — deck preview: đúng thứ tự như deck lúc start (most overdue → cap 8). */}
+        {mode === AppMode.REVIEW && (
+          <div className="w-full mb-4 text-left rounded-lg border border-teal-200 dark:border-teal-800/40 bg-teal-50/60 dark:bg-teal-900/10 px-4 py-3">
+            {(() => {
+              const deck: MistakeEntry[] = getMistakes()
+                .filter((m) => !m.mastered)
+                .sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0));
+              if (deck.length === 0) {
+                return (
+                  <p className="text-xs text-teal-700 dark:text-teal-300 leading-relaxed" lang="vi">
+                    🎯 Chưa có lỗi nào để ôn — chơi một buổi luyện nói trước để tích lũy lỗi, lượt sau có deck.
+                  </p>
+                );
+              }
+              return (
+                <>
+                  <div className="text-xs font-bold uppercase tracking-widest text-teal-600 dark:text-teal-400">
+                    🔁 SRS Deck · {Math.min(deck.length, 8)} thẻ
+                  </div>
+                  <ul className="mt-1.5 space-y-1">
+                    {deck.slice(0, 3).map((m) => (
+                      <li key={m.id} className="text-xs text-slate-600 dark:text-slate-300 truncate">
+                        <span className="font-bold">“{m.original}”</span> → <span className="text-teal-600 dark:text-teal-400">{m.corrected}</span>
+                      </li>
+                    ))}
+                    {deck.length > 3 && (
+                      <li className="text-[11px] text-slate-400" lang="vi">
+                        …và {deck.length - 3} thẻ nữa
+                      </li>
+                    )}
+                  </ul>
+                </>
+              );
+            })()}
+          </div>
+        )}
         <h2 className="text-2xl font-bold mb-2 dark:text-white">
           {mode === AppMode.TRANSLATE
             ? 'Ready to Translate?'
@@ -136,7 +173,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               ? 'Ready for Class?'
               : mode === AppMode.ROLEPLAY
                 ? 'Ready to Roleplay?'
-                : 'Ready to Speak English?'}
+                : mode === AppMode.REVIEW
+                  ? 'Ready to Review?'
+                  : 'Ready to Speak English?'}
         </h2>
 
         {mc.scenarios && (

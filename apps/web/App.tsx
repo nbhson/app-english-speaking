@@ -12,7 +12,7 @@ import {
   PanelRight,
   ShieldCheck,
 } from 'lucide-react';
-import { AppMode, SessionState, TranscriptionEntry } from './types';
+import { AppMode, SessionState, TranscriptionEntry, MistakeEntry } from './types';
 import { MODE_CONFIGS } from './modes';
 import { buildSystemPrompt, finishPrompt } from './utils/promptBuilder';
 import { AIConfig, ChatMessage, loadConfig, saveConfig, translatePhrase, transcribe } from './utils/api';
@@ -39,6 +39,7 @@ import { isBrowserSTTSupported } from './utils/browser';
 import {
   saveSession,
   addMistake,
+  getMistakes,
   logSessionProgress,
   getStreak,
   totalXP,
@@ -82,11 +83,16 @@ const FIRST_SCENARIO: Record<AppMode, string> = {
   [AppMode.CUSTOM]: 'understand',
   [AppMode.TRANSLATE]: 'casual',
   [AppMode.ROLEPLAY]: 'interview',
+  [AppMode.REVIEW]: '',
 };
 
 /** Hidden first turn that makes the AI open the roleplay scene in character. */
 const ROLEPLAY_KICK =
   '(Roleplay start: open the scene in character — greet/set the situation in 1-2 sentences, then wait for my response.)';
+
+/** Hidden first turn that launches the Review Class with the first deck item. */
+const REVIEW_KICK =
+  '(Review class start: greet the student in ONE short sentence, then run the drill on the FIRST item of the REVIEW DECK — ask them to use it in a new sentence and wait for their reply.)';
 
 const App: React.FC = () => {
   const [config, setConfig] = useState<AIConfig>(() => loadConfig());
@@ -195,6 +201,8 @@ const App: React.FC = () => {
   const [dailyDone, setDailyDone] = useState(() => isDailyDone());
   // F11: adaptive difficulty suggestion (computed from saved sessions).
   const [dismissedSuggestion, setDismissedState] = useState(() => getDismissedSuggestion());
+  // Review Class: SRS deck được chốt một lần ở lúc start session (mistakes hết hạn trước, dưới 8 thẻ).
+  const [reviewDrills, setReviewDrills] = useState<MistakeEntry[]>([]);
   const difficultySuggestion = useMemo(
     () => suggestDifficulty(getSessions(), config.difficulty ?? 'intermediate'),
     // libraryEpoch bumps when the Library closes → recompute with fresh sessions.
@@ -228,6 +236,11 @@ const App: React.FC = () => {
   const sessionEpochRef = useRef(0);
   const finishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dailyChallengeRef = useRef<DailyChallenge>(dailyChallenge);
+  const reviewDrillsRef = useRef<MistakeEntry[]>([]);
+
+  useEffect(() => {
+    reviewDrillsRef.current = reviewDrills;
+  }, [reviewDrills]);
 
   useEffect(() => {
     configRef.current = config;
@@ -353,7 +366,13 @@ const App: React.FC = () => {
   // --- Prompt & streaming ---
 
   const systemPrompt = (mode: AppMode) =>
-    buildSystemPrompt(configRef.current, mode, scenarioRef.current, customTopicRef.current);
+    buildSystemPrompt(
+      configRef.current,
+      mode,
+      scenarioRef.current,
+      customTopicRef.current,
+      reviewDrillsRef.current
+    );
 
   const contextMessages = (): ChatMessage[] =>
     transcriptionsRef.current
@@ -653,6 +672,16 @@ const App: React.FC = () => {
     setCanReplay(false);
     stt.resetBuffer();
 
+    // Review Class: chốt deck SRS ngay lúc start (due trước, cap 8) — được init
+    // trước hidden kick turn 300ms nên prompt đầu tiên đã có REVIEW DECK.
+    const deck = getMistakes()
+      .filter((m) => !m.mastered)
+      .sort((a, b) => (a.nextReview ?? 0) - (b.nextReview ?? 0))
+      .slice(0, 8);
+    const useDeck = mode === AppMode.REVIEW ? deck : [];
+    setReviewDrills(useDeck);
+    reviewDrillsRef.current = useDeck;
+
     // Safari/Firefox: no Web Speech -> auto-suggest custom STT instead of hard fail
     if (configRef.current.sttEngine === 'browser' && !isBrowserSTTSupported()) {
       setStartError(
@@ -688,6 +717,14 @@ const App: React.FC = () => {
       if (mode === AppMode.ROLEPLAY) {
         setTimeout(() => {
           void processUserText(ROLEPLAY_KICK, { hidden: true });
+        }, 300);
+      }
+
+      // Review Class: auto-kick chuẩn cùng vai trò — AI chạy drill item đầu
+      // ngay khi vào lớp, không có màn chat trống.
+      if (mode === AppMode.REVIEW) {
+        setTimeout(() => {
+          void processUserText(REVIEW_KICK, { hidden: true });
         }, 300);
       }
     } catch (err: unknown) {

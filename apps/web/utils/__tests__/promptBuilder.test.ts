@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildSystemPrompt, finishPrompt } from '../promptBuilder';
-import { AppMode } from '../../types';
+import { AppMode, MistakeEntry } from '../../types';
 import { DEFAULT_CONFIG } from '../api';
 
 describe('buildSystemPrompt', () => {
@@ -23,6 +23,33 @@ describe('buildSystemPrompt', () => {
     const inDaily = buildSystemPrompt(DEFAULT_CONFIG, AppMode.DAILY, 'weekend', 'present perfect');
     expect(inDaily).not.toContain('LESSON TOPIC');
   });
+
+  it('REVIEW mode injects the deck and caps it at 8 items', () => {
+    const mk = (i: number): MistakeEntry => ({
+      id: `m${i}`,
+      original: `wrong ${i}`,
+      corrected: `right ${i}`,
+      alternative: '',
+      explanation: `rule ${i}`,
+      mode: AppMode.DAILY,
+      createdAt: i,
+      reviewCount: 0,
+    });
+    const deck = Array.from({ length: 12 }, (_, i) => mk(i));
+    const p = buildSystemPrompt(DEFAULT_CONFIG, AppMode.REVIEW, '', '', deck);
+    expect(p).toContain('REVIEW DECK (8 saved corrections');
+    expect(p).toContain('"wrong 0" → "right 0"');
+    expect(p).toContain('"wrong 7" → "right 7"');
+    expect(p).not.toContain('wrong 8');
+    // the deck never leaks into other modes
+    const daily = buildSystemPrompt(DEFAULT_CONFIG, AppMode.DAILY, 'weekend', '', deck);
+    expect(daily).not.toContain('REVIEW DECK');
+  });
+
+  it('REVIEW mode with empty deck instructs a fallback', () => {
+    const p = buildSystemPrompt(DEFAULT_CONFIG, AppMode.REVIEW, '', '', []);
+    expect(p).toContain('The deck is empty');
+  });
 });
 
 describe('finishPrompt', () => {
@@ -33,5 +60,6 @@ describe('finishPrompt', () => {
     expect(finishPrompt(AppMode.TRANSLATE)).toContain('phrasings');
     expect(finishPrompt(AppMode.DAILY)).toContain('[Assessment]');
     expect(finishPrompt(AppMode.ROLEPLAY)).toContain('[Assessment]');
+    expect(finishPrompt(AppMode.REVIEW)).toContain('self-corrected');
   });
 });
