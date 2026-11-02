@@ -84,6 +84,8 @@ const FIRST_SCENARIO: Record<AppMode, string> = {
   [AppMode.TRANSLATE]: 'casual',
   [AppMode.ROLEPLAY]: 'interview',
   [AppMode.REVIEW]: '',
+  [AppMode.DEBATE]: 'oppose',
+  [AppMode.STORY]: 'mystery',
 };
 
 /** Hidden first turn that makes the AI open the roleplay scene in character. */

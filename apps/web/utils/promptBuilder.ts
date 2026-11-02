@@ -66,6 +66,10 @@ export function finishPrompt(mode: AppMode): string {
       return 'The lesson is over. Provide [Assessment], then give a 3-question mini-quiz on the lesson topic for homework plus a 2-sentence recap. Say goodbye.';
     case AppMode.REVIEW:
       return 'The review class is over. Provide [Assessment], then report which drill items the student self-corrected (good recall) vs still re-drilled (needs work), each in one line, plus ONE concrete step for the next review. Say goodbye.';
+    case AppMode.DEBATE:
+      return 'The debate is over. Provide [Assessment], then declare the verdict: 1 strongest argument of the student, 1 weakest (and why), plus 2 connectors/hedge phrasings to reuse. Say goodbye.';
+    case AppMode.STORY:
+      return 'The story session is over. Provide [Assessment], then give the story a 1-2 sentence finale. Quote the student\'s best 2 sentences (why they worked) and 1 vivid vocab item to keep. Say goodbye.';
     case AppMode.TRANSLATE:
       return 'Session over. Provide [Assessment], then list the 3 most useful natural phrasings we learned with 1-line nuance each. Say goodbye.';
     default:

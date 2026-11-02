@@ -36,6 +36,8 @@ const PRACTICE_MODES: AppMode[] = [
   AppMode.MEETING,
   AppMode.PRESENTATION,
   AppMode.ROLEPLAY,
+  AppMode.DEBATE,
+  AppMode.STORY,
 ];
 
 interface FeatureCardSection {

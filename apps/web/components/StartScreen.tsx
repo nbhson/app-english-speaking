@@ -175,7 +175,11 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 ? 'Ready to Roleplay?'
                 : mode === AppMode.REVIEW
                   ? 'Ready to Review?'
-                  : 'Ready to Speak English?'}
+                  : mode === AppMode.DEBATE
+                    ? 'Ready to Debate?'
+                    : mode === AppMode.STORY
+                      ? 'Ready to Set the Story?'
+                      : 'Ready to Speak English?'}
         </h2>
 
         {mc.scenarios && (
@@ -191,7 +195,11 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                       ? 'Choose goal'
                       : mode === AppMode.ROLEPLAY
                         ? 'Choose a roleplay'
-                        : 'Choose context'}
+                        : mode === AppMode.DEBATE
+                          ? 'Choose a battle'
+                          : mode === AppMode.STORY
+                            ? 'Choose a genre'
+                            : 'Choose context'}
             </div>
             <div className="grid grid-cols-2 gap-2">
               {mc.scenarios.map((sc) => (
