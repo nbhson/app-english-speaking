@@ -143,7 +143,10 @@ export async function speakCoachText(
   }
 
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-  window.speechSynthesis.cancel();
+  // NOTE: teardownCoachAudio() above already called cancel(). Do NOT cancel
+  // again right before speak(): Chrome has a known race where an utterance
+  // spoken immediately after a cancel is silently swallowed (no audio, no
+  // onend). Defer the speak() a tick instead so the queue can flush.
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'en-US';
   u.rate = config.ttsRate ?? 1;
@@ -151,21 +154,40 @@ export async function speakCoachText(
   const v = resolveVoice(config.ttsVoiceURI);
   if (v) u.voice = v;
   u.onend = finish;
-  u.onerror = finish;
-  window.speechSynthesis.speak(u);
-  handlers.onStart?.();
+  u.onerror = (e) => {
+    console.warn('speechSynthesis error:', (e as SpeechSynthesisErrorEvent).error ?? e);
+    finish();
+  };
+  window.setTimeout(() => {
+    if (epoch !== coachEpoch || ended) return;
+    window.speechSynthesis.speak(u);
+    handlers.onStart?.();
+  }, 80);
 
   // Chrome bug watchdog: speechSynthesis can report finished but never fire onend.
+  // Keep waiting while the utterance is still queued (pending) so slow voice
+  // startup is not mistaken for a silent hang; bail out after ~10s queued.
+  let watchdogTicks = 0;
   const watchdog = () => {
     if (ended || epoch !== coachEpoch) return;
     if (!('speechSynthesis' in window)) return;
-    if (!window.speechSynthesis.speaking) {
+    const { speaking, pending } = window.speechSynthesis;
+    if (!speaking && !pending) {
+      finish();
+      return;
+    }
+    if (!speaking && pending && ++watchdogTicks > 50) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        /* ignore */
+      }
       finish();
       return;
     }
     watchdogTimer = window.setTimeout(watchdog, 200);
   };
-  watchdogTimer = window.setTimeout(watchdog, 200);
+  watchdogTimer = window.setTimeout(watchdog, 500);
 }
 
 /**
@@ -204,7 +226,8 @@ export function speakAmbient(config: AIConfig, text: string): void {
       u.pitch = config.ttsPitch ?? 1;
       const v = resolveVoice(config.ttsVoiceURI);
       if (v) u.voice = v;
-      window.speechSynthesis.speak(u);
+      // Defer past the cancel — Chrome can swallow an immediate speak().
+      window.setTimeout(() => window.speechSynthesis.speak(u), 80);
     }
   })();
 }
@@ -240,6 +263,7 @@ export async function speakPreview(text: string, config: AIConfig): Promise<void
     u.pitch = config.ttsPitch ?? 1;
     const v = resolveVoice(config.ttsVoiceURI);
     if (v) u.voice = v;
-    window.speechSynthesis.speak(u);
+    // Defer past the cancel — Chrome can swallow an immediate speak().
+    window.setTimeout(() => window.speechSynthesis.speak(u), 80);
   }
 }

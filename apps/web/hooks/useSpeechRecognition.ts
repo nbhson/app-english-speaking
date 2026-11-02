@@ -69,9 +69,13 @@ export function useSpeechRecognition(args: UseSpeechRecognitionArgs): UseSpeechR
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
-  // True once an audio-capture error fires — permanently disable restart so
-  // the user sees the error banner and can switch to Custom STT / text input.
+  // True once the mic is confirmed permanently dead (permission denied or
+  // audio-capture persisted after retries) — blocks further start/restart.
   const micDeadRef = useRef(false);
+  // Consecutive audio-capture failures. This error is often TRANSIENT on
+  // Chrome/macOS (device reconfig, Bluetooth switch, getUserMedia handshake),
+  // so we retry a few times before declaring the mic dead.
+  const audioCaptureFailsRef = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -149,6 +153,7 @@ export function useSpeechRecognition(args: UseSpeechRecognitionArgs): UseSpeechR
 
   const setupRecognition = useCallback(() => {
     micDeadRef.current = false; // new session — user may have plugged the mic back in
+    audioCaptureFailsRef.current = 0;
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
       argsRef.current.onError(
@@ -195,22 +200,34 @@ export function useSpeechRecognition(args: UseSpeechRecognitionArgs): UseSpeechR
 
       rec.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
-        if (
-          event.error === 'not-allowed' ||
-          event.error === 'service-not-allowed' ||
-          event.error === 'audio-capture'
-        ) {
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          // Permission errors never self-heal mid-session → fatal.
           micDeadRef.current = true;
           argsRef.current.onFatalError(
-            event.error === 'audio-capture'
-              ? 'Không tìm thấy microphone cho Web Speech. Kiểm tra thiết bị hoặc chuyển STT sang Custom Provider để tiếp tục.'
-              : 'Microphone not allowed for speech recognition. Check browser permissions.'
+            'Microphone not allowed for speech recognition. Check browser permissions.'
           );
+        } else if (event.error === 'audio-capture') {
+          // Often transient (device reconfig / Bluetooth / getUserMedia handshake).
+          // Retry via the normal onend restart; only give up after 3 consecutive
+          // failures — and even then keep the session alive (text input works).
+          audioCaptureFailsRef.current += 1;
+          if (audioCaptureFailsRef.current >= 3) {
+            micDeadRef.current = true;
+            argsRef.current.onError(
+              'Không lấy được microphone cho Web Speech sau vài lần thử — bạn vẫn có thể gõ text, hoặc chuyển STT sang Custom Provider trong Settings.'
+            );
+          } else {
+            argsRef.current.onError('Mic chưa sẵn sàng, đang thử lại…');
+          }
         }
         // no-speech / others: transient — rely on onend restart
       };
 
-      rec.onstart = () => setIsListening(true);
+      rec.onstart = () => {
+        // A successful start proves the mic works — reset the failure streak.
+        audioCaptureFailsRef.current = 0;
+        setIsListening(true);
+      };
 
       rec.onend = () => {
         recognitionStartedRef.current = false;
