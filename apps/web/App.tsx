@@ -29,6 +29,9 @@ const WordDiveModal = React.lazy(() =>
 const GrammarFixModal = React.lazy(() =>
   import('./components/tools/GrammarFixModal').then((mod) => ({ default: mod.GrammarFixModal }))
 );
+const CoursesModal = React.lazy(() =>
+  import('./components/tools/CoursesModal').then((mod) => ({ default: mod.CoursesModal }))
+);
 import { Header } from './components/Header';
 import { AuthModal } from './components/AuthModal';
 import { Sidebar } from './components/Sidebar';
@@ -60,6 +63,7 @@ import {
   type Difficulty,
 } from './utils/adaptive';
 import { getDailyChallenge, isDailyDone, markDailyDone, type DailyChallenge } from './utils/dailyChallenge';
+import { markCourseLessonDone } from './utils/courses';
 import { mirrorSession, mirrorMistake, mirrorProgress, migrateLocalToServer } from './utils/serverStore';
 import { cachedUser, fetchMe, logout, type AuthUser } from './utils/auth';
 import { uid } from './utils/uid';
@@ -169,6 +173,7 @@ const App: React.FC = () => {
   const [transcriptions, setTranscriptions] = useState<TranscriptionEntry[]>([]);
   const [assessment, setAssessment] = useState({ ...INITIAL_ASSESSMENT });
   const [hasAssessmentData, setHasAssessmentData] = useState(false);
+  const hasAssessmentDataRef = useRef(false);
   const [duration, setDuration] = useState(0);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -246,6 +251,8 @@ const App: React.FC = () => {
   const sessionEpochRef = useRef(0);
   const finishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dailyChallengeRef = useRef<DailyChallenge>(dailyChallenge);
+  // Mini Course: bài đang học (đặt ngay trước startSession CUSTOM từ Courses modal).
+  const courseLessonRef = useRef<{ courseId: string; lessonId: string; title: string } | null>(null);
   const reviewDrillsRef = useRef<MistakeEntry[]>([]);
 
   useEffect(() => {
@@ -258,6 +265,9 @@ const App: React.FC = () => {
   useEffect(() => {
     transcriptionsRef.current = transcriptions;
   }, [transcriptions]);
+  useEffect(() => {
+    hasAssessmentDataRef.current = hasAssessmentData;
+  }, [hasAssessmentData]);
   useEffect(() => {
     customTopicRef.current = customTopic;
   }, [customTopic]);
@@ -612,6 +622,15 @@ const App: React.FC = () => {
       };
       saveSession(rec);
       mirrorSession(rec);
+      // Mini Course: buổi CUSTOM có lesson đang học → tick ✓ bài đó.
+      // persistSession chỉ chạy với save=true (Finish & Assess / Stop), nên
+      // session bị hủy giữa chừng không tính là hoàn thành.
+      const lesson = courseLessonRef.current;
+      if (lesson && modeRef.current === AppMode.CUSTOM && hasAssessmentDataRef.current) {
+        markCourseLessonDone(lesson.courseId, lesson.lessonId);
+        courseLessonRef.current = null;
+        setAnnounce(`🎓 Hoàn thành bài "${lesson.title}" — tick trong Mini Courses!`);
+      }
       const { streak: s } = logSessionProgress(durationSec, xpGain);
       setStreak(s);
       setXp(totalXP());
@@ -717,6 +736,8 @@ const App: React.FC = () => {
       setSession({ isActive: true, mode, startTime: now() });
       activeRef.current = true;
       modeRef.current = mode;
+      // Mini Course: ref lesson chỉ có nghĩa khi đang trong CUSTOM; mode khác → dọn.
+      if (mode !== AppMode.CUSTOM) courseLessonRef.current = null;
 
       if (configRef.current.sttEngine === 'browser') {
         stt.setupRecognition();
@@ -1325,8 +1346,23 @@ const App: React.FC = () => {
             <Suspense fallback={null}>
               {activeTool === 'wordDive' ? (
                 <WordDiveModal config={config} onClose={() => setActiveTool(null)} />
-              ) : (
+              ) : activeTool === 'grammarFix' ? (
                 <GrammarFixModal config={config} onClose={() => setActiveTool(null)} />
+              ) : (
+                <CoursesModal
+                  onClose={() => setActiveTool(null)}
+                  onLessonStart={(lesson, course) => {
+                    setActiveTool(null);
+                    // Đánh dấu bài đang học — persistSession sẽ tick ✓ khi buổi xong CÓ assessment.
+                    courseLessonRef.current = { courseId: course.id, lessonId: lesson.id, title: lesson.title };
+                    const def = MODE_CONFIGS[AppMode.CUSTOM]?.scenarios?.[0]?.id ?? 'understand';
+                    setScenarioId(def);
+                    scenarioRef.current = def;
+                    setCustomTopic(lesson.focus);
+                    if (session.mode !== AppMode.CUSTOM) setSession((prev) => ({ ...prev, mode: AppMode.CUSTOM }));
+                    void startSession(AppMode.CUSTOM);
+                  }}
+                />
               )}
             </Suspense>
           )}

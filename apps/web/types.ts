@@ -14,8 +14,8 @@ export enum AppMode {
 export type Difficulty = 'beginner' | 'intermediate' | 'advanced';
 export type CoachPersona = 'encouraging' | 'strict' | 'professional';
 
-/** Quick tools that open their own modal (not chat sessions — see Tools sidebar group). */
-export type ToolId = 'wordDive' | 'grammarFix';
+/** Quick tools + catalogs that open their own modal (not chat sessions — see Tools/Classes sidebar groups). */
+export type ToolId = 'wordDive' | 'grammarFix' | 'courses';
 
 export interface SessionAssessment {
   fluency: number;
