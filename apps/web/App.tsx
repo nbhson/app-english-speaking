@@ -12,7 +12,7 @@ import {
   PanelRight,
   ShieldCheck,
 } from 'lucide-react';
-import { AppMode, SessionState, TranscriptionEntry, MistakeEntry } from './types';
+import { AppMode, SessionState, TranscriptionEntry, MistakeEntry, type ToolId } from './types';
 import { MODE_CONFIGS } from './modes';
 import { buildSystemPrompt, finishPrompt } from './utils/promptBuilder';
 import { AIConfig, ChatMessage, loadConfig, saveConfig, translatePhrase, transcribe } from './utils/api';
@@ -22,6 +22,12 @@ const LibraryPanel = React.lazy(() =>
 );
 const SettingsModal = React.lazy(() =>
   import('./components/SettingsModal').then((mod) => ({ default: mod.SettingsModal }))
+);
+const WordDiveModal = React.lazy(() =>
+  import('./components/tools/WordDiveModal').then((mod) => ({ default: mod.WordDiveModal }))
+);
+const GrammarFixModal = React.lazy(() =>
+  import('./components/tools/GrammarFixModal').then((mod) => ({ default: mod.GrammarFixModal }))
 );
 import { Header } from './components/Header';
 import { AuthModal } from './components/AuthModal';
@@ -183,6 +189,8 @@ const App: React.FC = () => {
   });
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
+  // Tools sidebar: quick single-shot modals (no chat session involved).
+  const [activeTool, setActiveTool] = useState<ToolId | null>(null);
   const [browserSTT] = useState(() => isBrowserSTTSupported());
   // speech metrics + gamification
   const [avgWpm, setAvgWpm] = useState(0);
@@ -1011,7 +1019,7 @@ const App: React.FC = () => {
                       </button>
                     </div>
                     <div className="flex-1 min-h-0 overflow-y-auto p-3">
-                      <Sidebar activeMode={session.mode} onChangeMode={changeMode} />
+                      <Sidebar activeMode={session.mode} onChangeMode={changeMode} onOpenTool={setActiveTool} />
                     </div>
                   </div>
                 </m.nav>
@@ -1049,7 +1057,7 @@ const App: React.FC = () => {
                         <X className="w-5 h-5" />
                       </button>
                     </div>
-                    <Sidebar activeMode={session.mode} onChangeMode={changeMode} />
+                    <Sidebar activeMode={session.mode} onChangeMode={changeMode} onOpenTool={setActiveTool} />
                   </m.nav>
                 </>
               )}
@@ -1311,6 +1319,15 @@ const App: React.FC = () => {
                   setShowTour(true);
                 }}
               />
+            </Suspense>
+          )}
+          {activeTool && (
+            <Suspense fallback={null}>
+              {activeTool === 'wordDive' ? (
+                <WordDiveModal config={config} onClose={() => setActiveTool(null)} />
+              ) : (
+                <GrammarFixModal config={config} onClose={() => setActiveTool(null)} />
+              )}
             </Suspense>
           )}
           {showLibrary && (

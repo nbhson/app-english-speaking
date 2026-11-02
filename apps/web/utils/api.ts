@@ -303,6 +303,103 @@ export async function translateWord(config: AIConfig, word: string, signal?: Abo
   }
 }
 
+// --- Tool helpers (Word Deep-Dive, Grammar Fix) — single-shot, JSON in / JSON out ---
+
+/** Extract the first JSON object/array embedded in a mostly-text reply. */
+function extractJson(raw: string): unknown {
+  const match = raw.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+  return JSON.parse(match ? match[0] : raw);
+}
+
+export interface DeepDiveResult {
+  word: string;
+  ipa: string;
+  /** register/usage note, e.g. "casual", "business", "formal" */
+  register: string;
+  /** 1-2 sentence meaning + nuance, in Vietnamese */
+  meaning: string;
+  collocations: string[];
+  examples: { text: string; tone: 'casual' | 'business' | 'formal' }[];
+  /** common mistake Vietnamese learners make with this word + the fix */
+  vnMistake: string;
+  related: string[];
+}
+
+export async function wordDeepDive(config: AIConfig, word: string, signal?: AbortSignal): Promise<DeepDiveResult | null> {
+  try {
+    const raw = await chatOnce(config, [
+      {
+        role: 'system',
+        content:
+          'You are a lexicographer helping Vietnamese English learners go deep on ONE word. Deterministic, temperature 0. ' +
+          'Return ONLY a single valid JSON object, no markdown fences, no extra text. ' +
+          'Schema: {"word":"<the word>","ipa":"/<IPA with slashes>/","register":"<casual|neutral|business|formal|slang + semantic nuance in Vietnamese, ~6 words>","meaning":"<1-2 câu tiếng Việt: nghĩa + sắc thái khác gì từ đồng nghĩa gần nhất>","collocations":["<4-6 frequent natural collocations>"],"examples":[{"text":"<natural English sentence 6-16 words>","tone":"casual|business|formal"} — exactly 3 examples with DISTINCT tones],"vnMistake":"<lỗi người Việt hay mắc khi dùng từ này: câu sai → câu đúng, viết bằng tiếng Việt>","related":["<3-5 synonyms/phrasal verbs>"]} ' +
+          'If the word is unknown/misspelled, still return best-guess JSON. ' +
+          'Support phrases and phrasal verbs as well as single words.',
+      },
+      { role: 'user', content: word },
+    ], signal);
+    const parsed = extractJson(raw) as Partial<DeepDiveResult>;
+    const fmt = (s: string | undefined, cap: number) => (s ?? '').toString().slice(0, cap);
+    return {
+      word: fmt(parsed.word, 40) || word,
+      ipa: fmt(parsed.ipa, 40),
+      register: fmt(parsed.register, 80),
+      meaning: fmt(parsed.meaning, 400),
+      collocations: (parsed.collocations ?? []).slice(0, 6).map((c) => String(c).slice(0, 60)),
+      examples: (parsed.examples ?? []).slice(0, 3).map((e) => ({
+        text: String(e.text ?? '').slice(0, 160),
+        tone: (e.tone === 'business' || e.tone === 'formal' ? e.tone : 'casual') as 'casual' | 'business' | 'formal',
+      })).filter((e) => e.text),
+      vnMistake: fmt(parsed.vnMistake, 300),
+      related: (parsed.related ?? []).slice(0, 5).map((r) => String(r).slice(0, 40)),
+    };
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') return null;
+    console.error('Word deep dive error', e);
+    return null;
+  }
+}
+
+export interface GrammarFixResult {
+  corrected: string;
+  fixes: { original: string; corrected: string; reason: string }[];
+  /** 1 dòng hướng dẫn tiếng Việt */
+  summary: string;
+}
+
+export async function fixGrammar(config: AIConfig, text: string, signal?: AbortSignal): Promise<GrammarFixResult | null> {
+  try {
+    const raw = await chatOnce(config, [
+      {
+        role: 'system',
+        content:
+          'You are a precise English editor for Vietnamese learners. Deterministic, temperature 0. ' +
+          'Correct grammar, articles, tenses, prepositions, collocations and unnatural phrasing of the given text. Keep meaning and voice; never rewrite style into something the student did not intend. ' +
+          'Return ONLY a single valid JSON object, no markdown fences, no extra text. ' +
+          'Schema: {"corrected":"<the full corrected paragraph>","fixes":[{"original":"<short exact span from the text>","corrected":"<the fixed span>","reason":"<lý do ngắn BẰNG TIẾNG VIỆT, 1 dòng>"}],"summary":"<1 dòng tiếng Việt: pattern lỗi chủ đạo cần nhớ>"} ' +
+          'Group repeated same-type errors into one fix entry (quote them joined by /). Multi-char limit: each fix span ≤ 90 chars. ' +
+          'If the input is already perfect English, return corrected = input and fixes = [].',
+      },
+      { role: 'user', content: text },
+    ], signal);
+    const parsed = extractJson(raw) as Partial<GrammarFixResult>;
+    return {
+      corrected: String(parsed.corrected ?? '').trim(),
+      fixes: (parsed.fixes ?? []).slice(0, 10).map((f) => ({
+        original: String(f.original ?? '').slice(0, 100),
+        corrected: String(f.corrected ?? '').slice(0, 100),
+        reason: String(f.reason ?? '').slice(0, 200),
+      })).filter((f) => f.original && f.corrected),
+      summary: String(parsed.summary ?? '').slice(0, 200),
+    };
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') return null;
+    console.error('Grammar fix error', e);
+    return null;
+  }
+}
+
 export async function translatePhrase(config: AIConfig, text: string, signal?: AbortSignal): Promise<string | null> {
   try {
     const result = await chatOnce(config, [

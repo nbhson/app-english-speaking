@@ -1,6 +1,13 @@
 import React from 'react';
-import { ArrowRightLeft, GraduationCap, RotateCcw, type LucideIcon } from 'lucide-react';
-import { AppMode } from '../types';
+import {
+  ArrowRightLeft,
+  BookOpenText,
+  GraduationCap,
+  RotateCcw,
+  SpellCheck,
+  type LucideIcon,
+} from 'lucide-react';
+import { AppMode, type ToolId } from '../types';
 import { MODE_CONFIGS } from '../modes';
 
 interface SidebarItemProps {
@@ -41,7 +48,13 @@ const PRACTICE_MODES: AppMode[] = [
 ];
 
 interface FeatureCardSection {
-  mode: AppMode;
+  key: string;
+  title: string;
+  tagline: string;
+  /** present → click switches the practice mode */
+  mode?: AppMode;
+  /** present → click opens a tool modal instead */
+  tool?: ToolId;
   icon: LucideIcon;
   /** tiny badge in the top-right corner, e.g. "tool" / "1-1" / "SRS" */
   badge: string;
@@ -63,6 +76,9 @@ const FEATURE_GROUPS: FeatureGroup[] = [
     heading: 'Tools',
     items: [
       {
+        key: 'translate',
+        title: MODE_CONFIGS[AppMode.TRANSLATE].title,
+        tagline: MODE_CONFIGS[AppMode.TRANSLATE].tagline,
         mode: AppMode.TRANSLATE,
         icon: ArrowRightLeft,
         badge: 'tool',
@@ -72,12 +88,41 @@ const FEATURE_GROUPS: FeatureGroup[] = [
         taglineIdle: 'text-rose-500/70 dark:text-rose-400/60',
         badgeIdle: 'bg-rose-100 dark:bg-rose-900/40 text-rose-500 dark:text-rose-300',
       },
+      {
+        key: 'word-dive',
+        title: 'Word Deep-Dive',
+        tagline: 'Bóc 1 từ: IPA, collocations, lỗi hay mắc',
+        tool: 'wordDive',
+        icon: BookOpenText,
+        badge: 'dict',
+        cardIdle: 'bg-gradient-to-r from-emerald-50/80 to-lime-50/80 dark:from-emerald-950/40 dark:to-lime-950/20 border-emerald-200 dark:border-emerald-900/50 hover:border-emerald-300 dark:hover:border-emerald-800 hover:shadow-sm hover:shadow-emerald-500/10',
+        cardActive: '',
+        iconIdle: 'bg-emerald-500/10 text-emerald-600 group-hover:bg-emerald-500/15',
+        taglineIdle: 'text-emerald-600/70 dark:text-emerald-400/60',
+        badgeIdle: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300',
+      },
+      {
+        key: 'grammar-fix',
+        title: 'Grammar Fix',
+        tagline: 'Paste đoạn văn → sửa + giải thích từng lỗi',
+        tool: 'grammarFix',
+        icon: SpellCheck,
+        badge: 'fix',
+        cardIdle: 'bg-gradient-to-r from-sky-50/80 to-indigo-50/80 dark:from-sky-950/40 dark:to-indigo-950/20 border-sky-200 dark:border-sky-900/50 hover:border-sky-300 dark:hover:border-sky-800 hover:shadow-sm hover:shadow-sky-500/10',
+        cardActive: '',
+        iconIdle: 'bg-sky-500/10 text-sky-600 group-hover:bg-sky-500/15',
+        taglineIdle: 'text-sky-600/70 dark:text-sky-400/60',
+        badgeIdle: 'bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-200',
+      },
     ],
   },
   {
     heading: 'Classes',
     items: [
       {
+        key: 'custom',
+        title: MODE_CONFIGS[AppMode.CUSTOM].title,
+        tagline: MODE_CONFIGS[AppMode.CUSTOM].tagline,
         mode: AppMode.CUSTOM,
         icon: GraduationCap,
         badge: '1-1',
@@ -88,6 +133,9 @@ const FEATURE_GROUPS: FeatureGroup[] = [
         badgeIdle: 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-300',
       },
       {
+        key: 'review',
+        title: MODE_CONFIGS[AppMode.REVIEW].title,
+        tagline: MODE_CONFIGS[AppMode.REVIEW].tagline,
         mode: AppMode.REVIEW,
         icon: RotateCcw,
         badge: 'SRS',
@@ -104,21 +152,25 @@ const FEATURE_GROUPS: FeatureGroup[] = [
 interface FeatureCardItemProps {
   section: FeatureCardSection;
   active: boolean;
-  onClick: (mode: AppMode) => void;
+  onChangeMode: (mode: AppMode) => void;
+  onOpenTool: (tool: ToolId) => void;
 }
 
-/** Translator / class cards — richer design than the minimal practice-mode rows. */
-const FeatureCardItem: React.FC<FeatureCardItemProps> = ({ section, active, onClick }) => {
-  const mc = MODE_CONFIGS[section.mode];
+/** Translator / class / tool cards — richer design than the minimal practice-mode rows. */
+const FeatureCardItem: React.FC<FeatureCardItemProps> = ({ section, active, onChangeMode, onOpenTool }) => {
   const Icon = section.icon;
   return (
     <button
-      onClick={() => onClick(section.mode)}
+      onClick={() => {
+        if (section.mode) onChangeMode(section.mode);
+        else if (section.tool) onOpenTool(section.tool);
+      }}
+      data-tour-id={`feature-${section.key}`}
       className={`group w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all text-left ${
         active ? section.cardActive : section.cardIdle
       }`}
       aria-current={active ? 'page' : undefined}
-      aria-label={`Select ${mc.title}`}
+      aria-label={section.mode ? `Select ${section.title}` : `Open ${section.title}`}
     >
       <span
         className={`flex items-center justify-center w-7 h-7 rounded-lg shrink-0 transition-colors ${
@@ -129,8 +181,8 @@ const FeatureCardItem: React.FC<FeatureCardItemProps> = ({ section, active, onCl
         <Icon size={14} strokeWidth={2.5} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block font-bold text-xs lg:text-sm leading-tight">{mc.title}</span>
-        <span className={`block text-[10px] leading-tight mt-0.5 truncate ${active ? 'text-white/80' : section.taglineIdle}`}>{mc.tagline}</span>
+        <span className="block font-bold text-xs lg:text-sm leading-tight">{section.title}</span>
+        <span className={`block text-[10px] leading-tight mt-0.5 truncate ${active ? 'text-white/80' : section.taglineIdle}`}>{section.tagline}</span>
       </span>
       <span
         className={`shrink-0 text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md ${
@@ -146,9 +198,10 @@ const FeatureCardItem: React.FC<FeatureCardItemProps> = ({ section, active, onCl
 interface SidebarProps {
   activeMode: AppMode;
   onChangeMode: (mode: AppMode) => void;
+  onOpenTool: (tool: ToolId) => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeMode, onChangeMode }) => (
+export const Sidebar: React.FC<SidebarProps> = ({ activeMode, onChangeMode, onOpenTool }) => (
   <nav className="flex flex-col space-y-2 overflow-y-auto pr-2 shrink-0" aria-label="Practice modes, tools and classes">
     <div className="mb-2">
       <h2 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-4 mb-2">
@@ -168,10 +221,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeMode, onChangeMode }) =>
         <div className="space-y-1.5">
           {group.items.map((section) => (
             <FeatureCardItem
-              key={section.mode}
+              key={section.key}
               section={section}
-              active={activeMode === section.mode}
-              onClick={onChangeMode}
+              active={section.mode ? activeMode === section.mode : false}
+              onChangeMode={onChangeMode}
+              onOpenTool={onOpenTool}
             />
           ))}
         </div>
