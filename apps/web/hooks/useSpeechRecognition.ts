@@ -69,6 +69,9 @@ export function useSpeechRecognition(args: UseSpeechRecognitionArgs): UseSpeechR
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
+  // True once an audio-capture error fires — permanently disable restart so
+  // the user sees the error banner and can switch to Custom STT / text input.
+  const micDeadRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -86,7 +89,7 @@ export function useSpeechRecognition(args: UseSpeechRecognitionArgs): UseSpeechR
 
   const startRecognition = useCallback(() => {
     const rec = recognitionRef.current;
-    if (!rec || recognitionStartedRef.current) return;
+    if (!rec || recognitionStartedRef.current || micDeadRef.current) return;
     try {
       rec.start();
       recognitionStartedRef.current = true;
@@ -145,6 +148,7 @@ export function useSpeechRecognition(args: UseSpeechRecognitionArgs): UseSpeechR
   }, [startRecognition]);
 
   const setupRecognition = useCallback(() => {
+    micDeadRef.current = false; // new session — user may have plugged the mic back in
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
       argsRef.current.onError(
@@ -191,29 +195,33 @@ export function useSpeechRecognition(args: UseSpeechRecognitionArgs): UseSpeechR
 
       rec.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
-        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        if (
+          event.error === 'not-allowed' ||
+          event.error === 'service-not-allowed' ||
+          event.error === 'audio-capture'
+        ) {
+          micDeadRef.current = true;
           argsRef.current.onFatalError(
-            'Microphone not allowed for speech recognition. Check browser permissions.'
+            event.error === 'audio-capture'
+              ? 'Không tìm thấy microphone cho Web Speech. Kiểm tra thiết bị hoặc chuyển STT sang Custom Provider để tiếp tục.'
+              : 'Microphone not allowed for speech recognition. Check browser permissions.'
           );
         }
-        // no-speech / audio-capture: transient — rely on onend restart
+        // no-speech / others: transient — rely on onend restart
       };
 
       rec.onstart = () => setIsListening(true);
 
       rec.onend = () => {
         recognitionStartedRef.current = false;
-        // Keep the mic indicator on while the 3s silence window is still pending.
         const hasPendingSpeech =
           speechBufferRef.current.trim().length > 0 || interimRef.current.trim().length > 0;
         if (!hasPendingSpeech) setIsListening(false);
+        // Don't restart if the mic is permanently dead (audio-capture / permission).
+        if (micDeadRef.current) return;
         const s = argsRef.current.getStatus();
         if (s.active && !s.processing && !s.speaking && s.engine === 'browser') {
-          // Browser auto-ends on pause — restart fast to keep capturing the same
-          // utterance; the silence timer decides when the turn is really over.
           window.setTimeout(() => resumeListening(), 300);
-        } else if (!hasPendingSpeech) {
-          setIsListening(false);
         }
       };
 
