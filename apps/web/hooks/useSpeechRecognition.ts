@@ -1,5 +1,5 @@
 // Speech recognition + push-to-talk recording lifecycle, extracted from App.tsx.
-// Owns: Web Speech recognition object, the 3s turn-buffering window (speech
+// Owns: Web Speech recognition object, the 1.5s turn-buffering window (speech
 // continues grouping across recognition restarts), and MediaRecorder push-to-talk.
 // Does NOT own: mic stream (session level), chat state, or recognition feature
 // detection (callers decide whether browser STT is even available).
@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppMode, SpeechRecognition } from '../types';
 import type { AIConfig } from '../utils/api';
 
-export const SILENCE_FLUSH_MS = 3000;
+export const SILENCE_FLUSH_MS = 1500;
 
 export interface SpeechStatus {
   active: boolean;
